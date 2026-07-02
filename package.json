@@ -1,0 +1,45 @@
+{
+  "name": "forest",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Forest IT business management app",
+  "scripts": {
+    "dev": "node --dns-result-order=ipv4first ./node_modules/next/dist/bin/next dev",
+    "build": "node --dns-result-order=ipv4first ./node_modules/next/dist/bin/next build",
+    "start": "node --dns-result-order=ipv4first ./node_modules/next/dist/bin/next start",
+    "lint": "eslint",
+    "prisma:generate": "node --dns-result-order=ipv4first ./node_modules/prisma/build/index.js generate",
+    "prisma:migrate:dev": "node --dns-result-order=ipv4first ./node_modules/prisma/build/index.js migrate dev",
+    "prisma:migrate:deploy": "node --dns-result-order=ipv4first ./node_modules/prisma/build/index.js migrate deploy",
+    "prisma:migrate:status": "node --dns-result-order=ipv4first ./node_modules/prisma/build/index.js migrate status",
+    "prisma:push": "node --dns-result-order=ipv4first ./node_modules/prisma/build/index.js db push",
+    "db:seed": "node --dns-result-order=ipv4first ./scripts/seed-db.mjs",
+    "db:migrate-json": "node --dns-result-order=ipv4first ./scripts/migrate-json-to-db.mjs"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "@fullcalendar/core": "^6.1.21",
+    "@fullcalendar/daygrid": "^6.1.21",
+    "@fullcalendar/interaction": "^6.1.21",
+    "@fullcalendar/luxon3": "^6.1.21",
+    "@fullcalendar/react": "^6.1.21",
+    "@fullcalendar/timegrid": "^6.1.21",
+    "@prisma/client": "^6.16.2",
+    "luxon": "^3.7.2",
+    "next": "^15.5.19",
+    "prisma": "^6.16.2",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.1",
+    "@types/luxon": "^3.7.2",
+    "@types/node": "^26.0.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^16.2.9",
+    "tailwindcss": "^4.3.1",
+    "typescript": "^6.0.3"
+  }
+}

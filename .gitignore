@@ -1,0 +1,53 @@
+# Dependencies
+/node_modules
+
+# Next.js build output
+/.next
+/out
+
+# Production build artifacts
+/build
+/dist
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Coverage and test output
+/coverage
+/.nyc_output
+
+# TypeScript
+*.tsbuildinfo
+
+# Prisma local artifacts
+/prisma/dev.db
+/prisma/dev.db-journal
+
+# Legacy local data snapshots
+/data/*.json
+
+# Editor directories and files
+/.vscode
+/.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini

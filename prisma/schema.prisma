@@ -1,0 +1,247 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  admin
+  bidder
+  caller
+  supportor
+}
+
+enum Platform {
+  Linkedin
+  Indeed
+  Jobright
+  Dice
+}
+
+enum ApplicationStatus {
+  Applied
+  Failed
+}
+
+enum InterviewStatus {
+  Scheduled
+  Confirmed
+  Done
+  Cancelled
+}
+
+model User {
+  id             String              @id @default(cuid())
+  name           String
+  email          String              @unique
+  passwordHash   String
+  role           Role
+  bidderAppliedRate Float            @default(0)
+  bidderFailedRate  Float            @default(0)
+  callerHourlyRate  Float            @default(0)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  sessions       Session[]
+  auditLogs      AuditLog[]
+  bidderProfiles ProfileAssignment[] @relation("BidderAssignments")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  ipAddress String?
+  osInfo    String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Profile {
+  id               String              @id
+  fullName         String
+  email            String
+  dob              String
+  address          String
+  phoneNumber      String
+  linkedinUrl      String
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  assignments      ProfileAssignment[]
+  jobApplications  JobApplicationRow[]
+}
+
+model ProfileAssignment {
+  bidderUserId String
+  profileId    String
+  createdAt    DateTime @default(now())
+  bidder       User     @relation("BidderAssignments", fields: [bidderUserId], references: [id], onDelete: Cascade)
+  profile      Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@id([bidderUserId, profileId])
+  @@index([profileId])
+}
+
+model AppSettings {
+  id                String  @id
+  permissionMatrix  Json
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model JobApplicationRow {
+  id          String             @id @default(cuid())
+  profileId   String
+  dayKey      String
+  rowId       Int
+  platform    Platform           @default(Linkedin)
+  company     String             @default("")
+  description String             @default("")
+  url         String             @default("")
+  stack       String             @default("")
+  status      ApplicationStatus?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  profile     Profile            @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, dayKey, rowId])
+  @@index([profileId, dayKey])
+}
+
+model Interview {
+  id              String          @id
+  ownerUserId     String?
+  bidderUserId    String?
+  callerUserId    String?
+  title           String
+  color           String
+  meetingLink     String          @default("")
+  resumeLink      String          @default("")
+  docLink         String          @default("")
+  step            Int             @default(1)
+  scheduledDate   String
+  scheduledTime   String
+  durationMinutes Int             @default(60)
+  status          InterviewStatus @default(Scheduled)
+  notes           String          @default("")
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([scheduledDate, scheduledTime])
+  @@index([callerUserId])
+  @@index([ownerUserId])
+}
+
+model IcsCalendarSource {
+  id          String   @id
+  ownerUserId String
+  name        String
+  url         String
+  color       String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([ownerUserId])
+}
+
+model IcsEventOverride {
+  id                       String   @id @default(cuid())
+  userId                   String
+  eventId                  String
+  title                    String
+  start                    String
+  end                      String
+  hasLocalTitleOverride    Boolean  @default(false)
+  hasLocalScheduleOverride Boolean  @default(false)
+  callerUserId             String?
+  meetingLink              String   @default("")
+  resumeLink               String   @default("")
+  docLink                  String   @default("")
+  step                     Int      @default(1)
+  notes                    String   @default("")
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  @@unique([userId, eventId])
+  @@index([userId])
+}
+
+model GoogleCalendarConnection {
+  id           String   @id
+  userId       String
+  email        String
+  accessToken  String
+  refreshToken String
+  expiryDate   BigInt
+  scope        String
+  calendarId   String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  links        GoogleCalendarEventLink[]
+
+  @@unique([userId, email])
+  @@index([userId])
+}
+
+model GoogleCalendarEventLink {
+  id             String                   @id @default(cuid())
+  connectionId   String
+  localEventId   String
+  externalEventId String
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  connection     GoogleCalendarConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, localEventId])
+  @@index([localEventId])
+}
+
+model FinanceTransaction {
+  id        String   @id
+  to        String
+  amount    Float
+  date      String
+  note      String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([date, createdAt])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String?
+  actorEmail  String?
+  action      String
+  targetType  String
+  targetId    String?
+  targetLabel String?
+  metadata    Json?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+  actorUser   User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([actorUserId])
+  @@index([action])
+}
+
+model LoginRateLimit {
+  key            String   @id
+  email          String
+  ipAddress      String
+  failedCount    Int      @default(0)
+  firstAttemptAt DateTime
+  blockedUntil   DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([email])
+  @@index([blockedUntil])
+  @@index([updatedAt])
+}

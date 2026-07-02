@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: forest
+    env: node
+    plan: starter
+    autoDeploy: true
+    buildCommand: npm ci && npm run prisma:generate && npm run build
+    startCommand: npm start
+    preDeployCommand: npm run prisma:migrate:deploy && npm run db:seed && npm run db:migrate-json
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
