@@ -138,7 +138,7 @@ export async function clearLoginRateLimit(key: string) {
 export async function pruneExpiredLoginRateLimits() {
   await ensureDatabaseConnected();
   const cutoff = new Date(Date.now() - WINDOW_MS);
-  await prisma.loginRateLimit.deleteMany({
+  const result = await prisma.loginRateLimit.deleteMany({
     where: {
       OR: [
         { updatedAt: { lt: cutoff } },
@@ -146,7 +146,8 @@ export async function pruneExpiredLoginRateLimits() {
       ],
     },
   });
-  revalidateTag("login-rate-limit");
+
+  return result.count;
 }
 
 export async function getBlockedLoginRateLimits() {
