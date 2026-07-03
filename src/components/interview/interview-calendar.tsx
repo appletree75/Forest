@@ -2279,31 +2279,23 @@ export function InterviewCalendar({
                 </select>
               </Field>
               <Field label="Meeting link" className="md:col-span-2">
-                <div className="space-y-2">
-                  <LinkInput
-                    value={importedDraft.meetingLink}
-                    readOnly={isImportedModalReadOnly}
-                    onChange={(value) =>
-                      setImportedDraft((current) =>
-                        current
-                          ? {
-                              ...current,
-                              meetingLink: value,
-                            }
-                          : current,
-                      )
-                    }
-                  />
-                  {!isImportedModalReadOnly ? (
-                    <button
-                      type="button"
-                      onClick={extractImportedMeetingLink}
-                      className="h-9 rounded-xl border border-[var(--border)] bg-white px-3 text-sm font-semibold"
-                    >
-                      Extract link
-                    </button>
-                  ) : null}
-                </div>
+                <LinkInput
+                  value={importedDraft.meetingLink}
+                  readOnly={isImportedModalReadOnly}
+                  onExtract={
+                    isImportedModalReadOnly ? null : extractImportedMeetingLink
+                  }
+                  onChange={(value) =>
+                    setImportedDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            meetingLink: value,
+                          }
+                        : current,
+                    )
+                  }
+                />
               </Field>
               <Field label="JD">
                 <LinkInput
@@ -2660,10 +2652,12 @@ function LinkInput({
   value,
   onChange,
   readOnly = false,
+  onExtract,
 }: {
   value: string;
   onChange: (value: string) => void;
   readOnly?: boolean;
+  onExtract?: (() => void) | null;
 }) {
   const normalizedValue = value.trim();
   const [copied, setCopied] = useState(false);
@@ -2677,7 +2671,9 @@ function LinkInput({
       ? normalizedValue
       : `https://${normalizedValue}`;
 
-    window.open(href, "_blank", "noopener,noreferrer");
+    const nextWindow = window.open(href, "_blank", "noopener,noreferrer");
+    nextWindow?.blur();
+    window.focus();
   };
 
   const copyLink = async () => {
@@ -2693,13 +2689,31 @@ function LinkInput({
   };
 
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_40px_40px] gap-2">
+    <div
+      className={`grid gap-2 ${
+        onExtract
+          ? "grid-cols-[minmax(0,1fr)_40px_40px_40px]"
+          : "grid-cols-[minmax(0,1fr)_40px_40px]"
+      }`}
+    >
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
         readOnly={readOnly}
         className="h-10 w-full rounded-xl border border-[var(--border)] bg-[color:var(--background)] px-3 text-sm outline-none"
       />
+      {onExtract ? (
+        <button
+          type="button"
+          onClick={onExtract}
+          disabled={readOnly}
+          className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border)] bg-[color:var(--background)] text-[color:var(--muted)] cursor-pointer disabled:cursor-not-allowed disabled:opacity-45"
+          aria-label="Extract meeting link"
+          title="Extract meeting link"
+        >
+          <ExtractLinkIcon />
+        </button>
+      ) : null}
       <button
         type="button"
         onClick={copyLink}
@@ -2853,6 +2867,25 @@ function PaletteIcon() {
       <circle cx="11.2" cy="8.2" r="1" />
       <circle cx="15.2" cy="8.8" r="1" />
       <circle cx="16.8" cy="12.8" r="1" />
+    </svg>
+  );
+}
+
+function ExtractLinkIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M8 12h8" />
+      <path d="m13 7 5 5-5 5" />
+      <path d="M5 5v14" />
     </svg>
   );
 }

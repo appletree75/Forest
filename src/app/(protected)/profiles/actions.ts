@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidateTag } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 
 import { getSessionUser } from "@/lib/auth";
 import { createProfile, deleteProfile, updateProfile } from "@/lib/profiles";
@@ -32,21 +32,28 @@ export async function updateProfileAction(_: ActionState, formData: FormData) {
     };
   }
 
-  await updateProfile({
-    id,
-    fullName,
-    email,
-    dob,
-    address,
-    phoneNumber,
-    linkedinUrl,
-  });
+  try {
+    await updateProfile({
+      id,
+      fullName,
+      email,
+      dob,
+      address,
+      phoneNumber,
+      linkedinUrl,
+    });
 
-  revalidateTag("profiles");
+    revalidateTag("profiles");
+    revalidatePath("/profiles");
 
-  return {
-    message: "Profile updated.",
-  };
+    return {
+      message: "Profile updated.",
+    };
+  } catch {
+    return {
+      message: "Unable to update profile.",
+    };
+  }
 }
 
 export async function createProfileAction(_: ActionState, formData: FormData) {
@@ -71,21 +78,28 @@ export async function createProfileAction(_: ActionState, formData: FormData) {
     };
   }
 
-  await createProfile({
-    fullName,
-    email,
-    dob,
-    address,
-    phoneNumber,
-    linkedinUrl,
-  });
+  try {
+    await createProfile({
+      fullName,
+      email,
+      dob,
+      address,
+      phoneNumber,
+      linkedinUrl,
+    });
 
-  revalidateTag("profiles");
-  revalidateTag("profile-assignments");
+    revalidateTag("profiles");
+    revalidateTag("profile-assignments");
+    revalidatePath("/profiles");
 
-  return {
-    message: "Profile created.",
-  };
+    return {
+      message: "Profile created.",
+    };
+  } catch {
+    return {
+      message: "Unable to create profile.",
+    };
+  }
 }
 
 export async function deleteProfileAction(_: ActionState, formData: FormData) {
@@ -105,12 +119,19 @@ export async function deleteProfileAction(_: ActionState, formData: FormData) {
     };
   }
 
-  await deleteProfile(id);
+  try {
+    await deleteProfile(id);
 
-  revalidateTag("profiles");
-  revalidateTag("profile-assignments");
+    revalidateTag("profiles");
+    revalidateTag("profile-assignments");
+    revalidatePath("/profiles");
 
-  return {
-    message: "Profile deleted.",
-  };
+    return {
+      message: "Profile deleted.",
+    };
+  } catch {
+    return {
+      message: "Unable to delete profile.",
+    };
+  }
 }

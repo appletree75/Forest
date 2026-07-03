@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useActionState } from "react";
+import { useRouter } from "next/navigation";
 
 import {
   createProfileAction,
@@ -19,6 +20,7 @@ type ProfileDirectoryProps = {
 };
 
 export function ProfileDirectory({ profiles }: ProfileDirectoryProps) {
+  const router = useRouter();
   const [createState, createAction, createPending] = useActionState(
     createProfileAction,
     initialState,
@@ -36,6 +38,12 @@ export function ProfileDirectory({ profiles }: ProfileDirectoryProps) {
 
     return () => window.clearTimeout(closeTimeoutId);
   }, [createState.message]);
+
+  useEffect(() => {
+    if (createState.message === "Profile created.") {
+      router.refresh();
+    }
+  }, [createState.message, router]);
 
   return (
     <section className="rounded-[34px] border border-[rgba(28,82,54,0.12)] bg-[linear-gradient(180deg,rgba(251,252,248,0.98),rgba(243,247,240,0.98))] p-5 shadow-[0_20px_56px_rgba(24,34,24,0.08)] md:p-6">
@@ -132,6 +140,7 @@ export function ProfileDirectory({ profiles }: ProfileDirectoryProps) {
 }
 
 function ProfileCard({ profile }: { profile: PersonalProfile }) {
+  const router = useRouter();
   const [updateState, updateAction, updatePending] = useActionState(
     updateProfileAction,
     initialState,
@@ -160,6 +169,18 @@ function ProfileCard({ profile }: { profile: PersonalProfile }) {
       window.clearTimeout(hideTimeoutId);
     };
   }, [updateState.message]);
+
+  useEffect(() => {
+    if (updateState.message === "Profile updated.") {
+      router.refresh();
+    }
+  }, [updateState.message, router]);
+
+  useEffect(() => {
+    if (deleteState.message === "Profile deleted.") {
+      router.refresh();
+    }
+  }, [deleteState.message, router]);
 
   return (
     <article className="overflow-hidden rounded-[26px] border border-[rgba(28,82,54,0.1)] bg-white shadow-[0_12px_36px_rgba(24,34,24,0.05)]">
