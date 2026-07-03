@@ -2666,6 +2666,7 @@ function LinkInput({
   readOnly?: boolean;
 }) {
   const normalizedValue = value.trim();
+  const [copied, setCopied] = useState(false);
 
   const openLink = () => {
     if (!normalizedValue) {
@@ -2685,6 +2686,10 @@ function LinkInput({
     }
 
     await navigator.clipboard.writeText(normalizedValue);
+    setCopied(true);
+    window.setTimeout(() => {
+      setCopied(false);
+    }, 1600);
   };
 
   return (
@@ -2699,17 +2704,21 @@ function LinkInput({
         type="button"
         onClick={copyLink}
         disabled={!normalizedValue}
-        className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border)] bg-[color:var(--background)] text-[color:var(--muted)] disabled:cursor-not-allowed disabled:opacity-45"
+        className={`flex h-10 w-10 items-center justify-center rounded-xl border bg-[color:var(--background)] cursor-pointer disabled:cursor-not-allowed disabled:opacity-45 ${
+          copied
+            ? "border-emerald-200 text-emerald-600"
+            : "border-[var(--border)] text-[color:var(--muted)]"
+        }`}
         aria-label="Copy link"
         title="Copy link"
       >
-        <CopyIcon />
+        {copied ? <StatusCheckIcon /> : <CopyIcon />}
       </button>
       <button
         type="button"
         onClick={openLink}
         disabled={!normalizedValue}
-        className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border)] bg-[color:var(--background)] text-[color:var(--muted)] disabled:cursor-not-allowed disabled:opacity-45"
+        className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border)] bg-[color:var(--background)] text-[color:var(--muted)] cursor-pointer disabled:cursor-not-allowed disabled:opacity-45"
         aria-label="Open link"
         title="Open link"
       >
@@ -2903,6 +2912,23 @@ function TrashIcon() {
       <path d="M6.5 7l.8 11.1c0 .9.7 1.4 1.6 1.4h6.2c.9 0 1.6-.5 1.6-1.4L17.5 7" />
       <path d="M10 11v5" />
       <path d="M14 11v5" />
+    </svg>
+  );
+}
+
+function StatusCheckIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M20 6 9 17l-5-5" />
     </svg>
   );
 }
