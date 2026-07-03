@@ -21,6 +21,7 @@ function mapInterview(event: {
   title: string;
   color: string;
   meetingLink: string;
+  jdLink: string;
   resumeLink: string;
   docLink: string;
   step: number;
@@ -38,6 +39,7 @@ function mapInterview(event: {
     callerUserId: event.callerUserId ?? "",
     color: event.color,
     meetingLink: event.meetingLink,
+    jdLink: event.jdLink,
     resumeLink: event.resumeLink,
     docLink: event.docLink,
     step: event.step,
@@ -58,6 +60,7 @@ function toStoredInterview(input: InterviewEvent) {
     title: String(input.title ?? "").trim(),
     color: sanitizeColor(input.color, input.status),
     meetingLink: String(input.meetingLink ?? "").trim(),
+    jdLink: String(input.jdLink ?? "").trim(),
     resumeLink: String(input.resumeLink ?? "").trim(),
     docLink: String(input.docLink ?? "").trim(),
     step: sanitizeStep(input.step),

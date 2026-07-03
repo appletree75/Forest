@@ -19,6 +19,7 @@ export async function PUT(request: Request) {
       hasLocalScheduleOverride?: boolean;
       callerUserId?: string;
       meetingLink?: string;
+      jdLink?: string;
       resumeLink?: string;
       docLink?: string;
       step?: number;
@@ -41,6 +42,7 @@ export async function PUT(request: Request) {
       hasLocalScheduleOverride: Boolean(body.hasLocalScheduleOverride),
       callerUserId: String(body.callerUserId ?? ""),
       meetingLink: String(body.meetingLink ?? ""),
+      jdLink: String(body.jdLink ?? ""),
       resumeLink: String(body.resumeLink ?? ""),
       docLink: String(body.docLink ?? ""),
       step: Number(body.step) || 0,

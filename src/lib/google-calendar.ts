@@ -294,6 +294,7 @@ function buildGoogleCalendarEventPayload(event: InterviewEvent) {
     Number.isFinite(event.step) && event.step > 0 ? `Step: ${event.step}` : "",
     event.notes.trim(),
     event.meetingLink.trim() ? `Meeting link: ${event.meetingLink.trim()}` : "",
+    event.jdLink.trim() ? `JD: ${event.jdLink.trim()}` : "",
     event.resumeLink.trim() ? `Resume: ${event.resumeLink.trim()}` : "",
     event.docLink.trim() ? `Doc: ${event.docLink.trim()}` : "",
   ]

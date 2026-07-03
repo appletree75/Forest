@@ -78,6 +78,7 @@ export type InterviewEvent = {
   callerUserId: string;
   color: string;
   meetingLink: string;
+  jdLink: string;
   resumeLink: string;
   docLink: string;
   step: number;
@@ -109,7 +110,12 @@ export type ImportedCalendarEvent = {
   end: string;
   allDay: boolean;
   color: string;
+  location?: string;
+  description?: string;
+  htmlDescription?: string;
+  externalUrl?: string;
   meetingLink?: string;
+  jdLink?: string;
   resumeLink?: string;
   docLink?: string;
   step?: number;
@@ -126,6 +132,7 @@ export type ImportedCalendarEventOverride = {
   hasLocalScheduleOverride?: boolean;
   callerUserId: string;
   meetingLink: string;
+  jdLink: string;
   resumeLink: string;
   docLink: string;
   step: number;

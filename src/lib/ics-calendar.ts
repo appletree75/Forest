@@ -1,5 +1,6 @@
 import { DateTime } from "luxon";
 
+import { extractMeetingLinkFromText } from "@/lib/meeting-link";
 import type {
   IcsCalendarSource,
   ImportedCalendarEvent,
@@ -57,6 +58,7 @@ export function applyImportedEventOverrides(
       end: override.hasLocalScheduleOverride ? override.end : event.end,
       callerUserId: override.callerUserId,
       meetingLink: override.meetingLink,
+      jdLink: override.jdLink,
       resumeLink: override.resumeLink,
       docLink: override.docLink,
       step: override.step,
@@ -151,6 +153,17 @@ function buildImportedEvent(
     end: normalizedEnd.toISOString(),
     allDay: start.allDay,
     color: source.color,
+    location: getFieldValue(raw, "LOCATION"),
+    description: getFieldValue(raw, "DESCRIPTION"),
+    htmlDescription: getFieldValue(raw, "X-ALT-DESC"),
+    externalUrl: getFieldValue(raw, "URL"),
+    meetingLink: extractMeetingLinkFromText(
+      getFieldValue(raw, "SUMMARY"),
+      getFieldValue(raw, "DESCRIPTION"),
+      getFieldValue(raw, "LOCATION"),
+      getFieldValue(raw, "URL"),
+      getFieldValue(raw, "X-ALT-DESC"),
+    ),
   } satisfies ImportedCalendarEvent;
 }
 
@@ -162,6 +175,10 @@ function findEntry(raw: Record<string, string>, startsWith: string) {
   }
 
   return { key, value: raw[key] };
+}
+
+function getFieldValue(raw: Record<string, string>, startsWith: string) {
+  return findEntry(raw, startsWith)?.value ?? "";
 }
 
 function parseIcsDateValue(key: string, value: string) {

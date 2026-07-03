@@ -30,6 +30,7 @@ import type {
   InterviewStatus,
   ManagedUser,
 } from "@/lib/types";
+import { extractMeetingLinkFromText } from "@/lib/meeting-link";
 
 const CALENDAR_SETTINGS_KEY = "forest-interview-calendar-settings";
 const ICS_SOURCE_PREFERENCES_KEY = "forest-interview-ics-source-preferences";
@@ -132,6 +133,7 @@ const emptyDraft = (
   callerUserId: "",
   color: statusDefaultColors.Scheduled,
   meetingLink: "",
+  jdLink: "",
   resumeLink: "",
   docLink: "",
   step: 1,
@@ -151,6 +153,7 @@ const emptyImportedDraft = (
   end: event.end,
   callerUserId: event.callerUserId ?? "",
   meetingLink: event.meetingLink ?? "",
+  jdLink: event.jdLink ?? "",
   resumeLink: event.resumeLink ?? "",
   docLink: event.docLink ?? "",
   step: event.step ?? 1,
@@ -776,6 +779,7 @@ export function InterviewCalendar({
                 end: hasLocalScheduleOverride ? importedDraft.end : event.end,
                 callerUserId: importedDraft.callerUserId,
                 meetingLink: importedDraft.meetingLink,
+                jdLink: importedDraft.jdLink,
                 resumeLink: importedDraft.resumeLink,
                 docLink: importedDraft.docLink,
                 step: importedDraft.step,
@@ -836,6 +840,34 @@ export function InterviewCalendar({
     } finally {
       setPending(false);
     }
+  };
+
+  const extractImportedMeetingLink = () => {
+    if (!originalImportedEvent || isImportedModalReadOnly) {
+      return;
+    }
+
+    const nextLink = extractMeetingLinkFromText(
+      originalImportedEvent.title,
+      originalImportedEvent.description,
+      originalImportedEvent.location,
+      originalImportedEvent.externalUrl,
+      originalImportedEvent.htmlDescription,
+      importedDraft?.notes,
+    );
+
+    if (!nextLink) {
+      return;
+    }
+
+    setImportedDraft((current) =>
+      current
+        ? {
+            ...current,
+            meetingLink: nextLink,
+          }
+        : current,
+    );
   };
 
   const moveCalendar = (direction: "prev" | "next" | "today") => {
@@ -965,6 +997,7 @@ export function InterviewCalendar({
             hasLocalScheduleOverride: true,
             callerUserId: currentImportedEvent?.callerUserId ?? "",
             meetingLink: currentImportedEvent?.meetingLink ?? "",
+            jdLink: currentImportedEvent?.jdLink ?? "",
             resumeLink: currentImportedEvent?.resumeLink ?? "",
             docLink: currentImportedEvent?.docLink ?? "",
             step: currentImportedEvent?.step ?? 1,
@@ -1917,6 +1950,18 @@ export function InterviewCalendar({
                   }
                 />
               </Field>
+              <Field label="JD">
+                <LinkInput
+                  value={draft.jdLink}
+                  readOnly={isLocalModalReadOnly}
+                  onChange={(value) =>
+                    setDraft((current) => ({
+                      ...current,
+                      jdLink: value,
+                    }))
+                  }
+                />
+              </Field>
               <Field label="Resume">
                 <LinkInput
                   value={draft.resumeLink}
@@ -2234,15 +2279,42 @@ export function InterviewCalendar({
                 </select>
               </Field>
               <Field label="Meeting link" className="md:col-span-2">
+                <div className="space-y-2">
+                  <LinkInput
+                    value={importedDraft.meetingLink}
+                    readOnly={isImportedModalReadOnly}
+                    onChange={(value) =>
+                      setImportedDraft((current) =>
+                        current
+                          ? {
+                              ...current,
+                              meetingLink: value,
+                            }
+                          : current,
+                      )
+                    }
+                  />
+                  {!isImportedModalReadOnly ? (
+                    <button
+                      type="button"
+                      onClick={extractImportedMeetingLink}
+                      className="h-9 rounded-xl border border-[var(--border)] bg-white px-3 text-sm font-semibold"
+                    >
+                      Extract link
+                    </button>
+                  ) : null}
+                </div>
+              </Field>
+              <Field label="JD">
                 <LinkInput
-                  value={importedDraft.meetingLink}
+                  value={importedDraft.jdLink}
                   readOnly={isImportedModalReadOnly}
                   onChange={(value) =>
                     setImportedDraft((current) =>
                       current
                         ? {
                             ...current,
-                            meetingLink: value,
+                            jdLink: value,
                           }
                         : current,
                     )

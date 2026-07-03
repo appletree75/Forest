@@ -22,6 +22,7 @@ function mapOverride(override: {
   hasLocalScheduleOverride: boolean;
   callerUserId: string | null;
   meetingLink: string;
+  jdLink: string;
   resumeLink: string;
   docLink: string;
   step: number;
@@ -37,6 +38,7 @@ function mapOverride(override: {
     hasLocalScheduleOverride: override.hasLocalScheduleOverride,
     callerUserId: override.callerUserId ?? "",
     meetingLink: override.meetingLink,
+    jdLink: override.jdLink,
     resumeLink: override.resumeLink,
     docLink: override.docLink,
     step: sanitizeStep(override.step),
@@ -88,6 +90,7 @@ export async function upsertIcsEventOverride(
       hasLocalScheduleOverride: Boolean(override.hasLocalScheduleOverride),
       callerUserId: sanitizeOptionalString(override.callerUserId),
       meetingLink: String(override.meetingLink ?? "").trim(),
+      jdLink: String(override.jdLink ?? "").trim(),
       resumeLink: String(override.resumeLink ?? "").trim(),
       docLink: String(override.docLink ?? "").trim(),
       step: sanitizeStep(override.step),
@@ -101,6 +104,7 @@ export async function upsertIcsEventOverride(
       hasLocalScheduleOverride: Boolean(override.hasLocalScheduleOverride),
       callerUserId: sanitizeOptionalString(override.callerUserId),
       meetingLink: String(override.meetingLink ?? "").trim(),
+      jdLink: String(override.jdLink ?? "").trim(),
       resumeLink: String(override.resumeLink ?? "").trim(),
       docLink: String(override.docLink ?? "").trim(),
       step: sanitizeStep(override.step),

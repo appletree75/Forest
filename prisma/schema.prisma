@@ -122,6 +122,7 @@ model Interview {
   title           String
   color           String
   meetingLink     String          @default("")
+  jdLink          String          @default("")
   resumeLink      String          @default("")
   docLink         String          @default("")
   step            Int             @default(1)
@@ -161,6 +162,7 @@ model IcsEventOverride {
   hasLocalScheduleOverride Boolean  @default(false)
   callerUserId             String?
   meetingLink              String   @default("")
+  jdLink                   String   @default("")
   resumeLink               String   @default("")
   docLink                  String   @default("")
   step                     Int      @default(1)
