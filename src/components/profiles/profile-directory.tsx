@@ -218,15 +218,15 @@ function ProfileCard({ profile }: { profile: PersonalProfile }) {
           <form action={updateAction} className="grid gap-4">
             <input type="hidden" name="id" value={profile.id} />
             <div className="grid gap-4 xl:grid-cols-2">
-              <EditableField label="Full Name" name="fullName" defaultValue={profile.fullName} />
-              <EditableField label="Email" name="email" defaultValue={profile.email} type="email" />
-              <EditableField label="DOB" name="dob" defaultValue={profile.dob} />
-              <EditableField label="Phone Number" name="phoneNumber" defaultValue={profile.phoneNumber} />
+              <EditableField key={`fullName:${profile.fullName}`} label="Full Name" name="fullName" defaultValue={profile.fullName} />
+              <EditableField key={`email:${profile.email}`} label="Email" name="email" defaultValue={profile.email} type="email" />
+              <EditableField key={`dob:${profile.dob}`} label="DOB" name="dob" defaultValue={profile.dob} />
+              <EditableField key={`phone:${profile.phoneNumber}`} label="Phone Number" name="phoneNumber" defaultValue={profile.phoneNumber} />
               <div className="xl:col-span-2">
-                <EditableField label="Address" name="address" defaultValue={profile.address} />
+                <EditableField key={`address:${profile.address}`} label="Address" name="address" defaultValue={profile.address} />
               </div>
               <div className="xl:col-span-2">
-                <EditableField label="LinkedIn URL" name="linkedinUrl" defaultValue={profile.linkedinUrl} />
+                <EditableField key={`linkedin:${profile.linkedinUrl}`} label="LinkedIn URL" name="linkedinUrl" defaultValue={profile.linkedinUrl} />
               </div>
             </div>
 
