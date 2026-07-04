@@ -4,10 +4,11 @@ import { getVisibleProfilesForUser } from "@/lib/profiles";
 
 export default async function DashboardPage() {
   const user = await getSessionUser();
+  const isBidder = user?.role === "bidder";
   const visibleProfiles = user ? await getVisibleProfilesForUser(user) : [];
   const stats = await getDashboardStats({
     visibleProfileIds:
-      user?.role === "bidder"
+      isBidder
         ? visibleProfiles.map((profile) => profile.id)
         : undefined,
     currentUserId: user?.id,
@@ -50,54 +51,56 @@ export default async function DashboardPage() {
           </div>
         </section>
 
-        <section className="mt-5 rounded-[28px] border border-[var(--border)] bg-white p-4 shadow-[0_10px_30px_rgba(24,34,24,0.04)]">
-          <div className="mb-4 text-lg font-semibold">Interview</div>
-          <div className="grid gap-4 xl:grid-cols-3">
-            {Object.values(stats.interviewPeriods).map((period) => (
-              <section
-                key={period.label}
-                className="rounded-[24px] border border-[var(--border)] bg-[color:var(--background)] p-4"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-xs font-semibold uppercase tracking-[0.22em] text-[color:var(--muted)]">
-                    {period.label}
-                  </div>
-                  <div className="rounded-full bg-white px-3 py-1 text-sm font-semibold">
-                    {period.totalInterviews}
-                  </div>
-                </div>
-
-                <div className="mt-4 rounded-2xl border border-[rgba(28,82,54,0.08)] bg-white px-4 py-3">
-                  <div className="text-sm text-[color:var(--muted)]">Total interviews</div>
-                  <div className="mt-1 text-2xl font-semibold">{period.totalInterviews}</div>
-                </div>
-
-                <div className="mt-4 space-y-2">
-                  {period.callers.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-[var(--border)] bg-white px-4 py-4 text-sm text-[color:var(--muted)]">
-                      No caller interview data.
+        {!isBidder ? (
+          <section className="mt-5 rounded-[28px] border border-[var(--border)] bg-white p-4 shadow-[0_10px_30px_rgba(24,34,24,0.04)]">
+            <div className="mb-4 text-lg font-semibold">Interview</div>
+            <div className="grid gap-4 xl:grid-cols-3">
+              {Object.values(stats.interviewPeriods).map((period) => (
+                <section
+                  key={period.label}
+                  className="rounded-[24px] border border-[var(--border)] bg-[color:var(--background)] p-4"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs font-semibold uppercase tracking-[0.22em] text-[color:var(--muted)]">
+                      {period.label}
                     </div>
-                  ) : (
-                    period.callers.map((caller) => (
-                      <div
-                        key={`${period.label}-${caller.id}`}
-                        className="flex items-center justify-between gap-3 rounded-2xl border border-[rgba(28,82,54,0.08)] bg-white px-4 py-3"
-                      >
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-semibold">{caller.name}</div>
-                          <div className="truncate text-xs text-[color:var(--muted)]">
-                            {caller.email}
-                          </div>
-                        </div>
-                        <div className="text-lg font-semibold">{caller.count}</div>
+                    <div className="rounded-full bg-white px-3 py-1 text-sm font-semibold">
+                      {period.totalInterviews}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-[rgba(28,82,54,0.08)] bg-white px-4 py-3">
+                    <div className="text-sm text-[color:var(--muted)]">Total interviews</div>
+                    <div className="mt-1 text-2xl font-semibold">{period.totalInterviews}</div>
+                  </div>
+
+                  <div className="mt-4 space-y-2">
+                    {period.callers.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-[var(--border)] bg-white px-4 py-4 text-sm text-[color:var(--muted)]">
+                        No caller interview data.
                       </div>
-                    ))
-                  )}
-                </div>
-              </section>
-            ))}
-          </div>
-        </section>
+                    ) : (
+                      period.callers.map((caller) => (
+                        <div
+                          key={`${period.label}-${caller.id}`}
+                          className="flex items-center justify-between gap-3 rounded-2xl border border-[rgba(28,82,54,0.08)] bg-white px-4 py-3"
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold">{caller.name}</div>
+                            <div className="truncate text-xs text-[color:var(--muted)]">
+                              {caller.email}
+                            </div>
+                          </div>
+                          <div className="text-lg font-semibold">{caller.count}</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </section>
+              ))}
+            </div>
+          </section>
+        ) : null}
       </section>
     </div>
   );
