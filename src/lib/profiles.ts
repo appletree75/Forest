@@ -1,4 +1,3 @@
-import { unstable_cache } from "next/cache";
 import { randomUUID } from "node:crypto";
 
 import { ensureDatabaseConnected } from "@/lib/database";
@@ -9,8 +8,7 @@ import type {
   SessionUser,
 } from "@/lib/types";
 
-const getCachedProfiles = unstable_cache(
-  async (): Promise<PersonalProfile[]> => {
+export async function getProfiles(): Promise<PersonalProfile[]> {
   await ensureDatabaseConnected();
 
   const profiles = await prisma.profile.findMany({
@@ -26,13 +24,9 @@ const getCachedProfiles = unstable_cache(
     phoneNumber: profile.phoneNumber,
     linkedinUrl: profile.linkedinUrl,
   }));
-  },
-  ["profiles"],
-  { tags: ["profiles"] },
-);
+}
 
-const getCachedProfileAssignments = unstable_cache(
-  async (): Promise<ProfileAssignmentMap> => {
+export async function getProfileAssignments(): Promise<ProfileAssignmentMap> {
   await ensureDatabaseConnected();
 
   const assignments = await prisma.profileAssignment.findMany();
@@ -44,10 +38,7 @@ const getCachedProfileAssignments = unstable_cache(
     ];
     return acc;
   }, {});
-  },
-  ["profile-assignments"],
-  { tags: ["profile-assignments"] },
-);
+}
 
 export async function setProfileAssignments(assignments: ProfileAssignmentMap) {
   await ensureDatabaseConnected();
@@ -65,8 +56,7 @@ export async function setProfileAssignments(assignments: ProfileAssignmentMap) {
   ]);
 }
 
-const getCachedBidderUsers = unstable_cache(
-  async () => {
+export async function getBidderUsers() {
   await ensureDatabaseConnected();
 
   const users = await prisma.user.findMany({
@@ -80,21 +70,6 @@ const getCachedBidderUsers = unstable_cache(
     email,
     role,
   }));
-  },
-  ["bidder-users"],
-  { tags: ["users"] },
-);
-
-export async function getProfiles() {
-  return getCachedProfiles();
-}
-
-export async function getProfileAssignments() {
-  return getCachedProfileAssignments();
-}
-
-export async function getBidderUsers() {
-  return getCachedBidderUsers();
 }
 
 export async function getVisibleProfilesForUser(user: SessionUser) {
