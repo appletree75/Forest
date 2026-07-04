@@ -2671,9 +2671,14 @@ function LinkInput({
       ? normalizedValue
       : `https://${normalizedValue}`;
 
-    const nextWindow = window.open(href, "_blank", "noopener,noreferrer");
-    nextWindow?.blur();
-    window.focus();
+    const link = document.createElement("a");
+    link.href = href;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   };
 
   const copyLink = async () => {
