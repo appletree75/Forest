@@ -2661,25 +2661,11 @@ function LinkInput({
 }) {
   const normalizedValue = value.trim();
   const [copied, setCopied] = useState(false);
-
-  const openLink = () => {
-    if (!normalizedValue) {
-      return;
-    }
-
-    const href = /^https?:\/\//i.test(normalizedValue)
+  const href = normalizedValue
+    ? /^https?:\/\//i.test(normalizedValue)
       ? normalizedValue
-      : `https://${normalizedValue}`;
-
-    const link = document.createElement("a");
-    link.href = href;
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-    link.style.display = "none";
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-  };
+      : `https://${normalizedValue}`
+    : "";
 
   const copyLink = async () => {
     if (!normalizedValue) {
@@ -2733,16 +2719,28 @@ function LinkInput({
       >
         {copied ? <StatusCheckIcon /> : <CopyIcon />}
       </button>
-      <button
-        type="button"
-        onClick={openLink}
-        disabled={!normalizedValue}
-        className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border)] bg-[color:var(--background)] text-[color:var(--muted)] cursor-pointer disabled:cursor-not-allowed disabled:opacity-45"
-        aria-label="Open link"
-        title="Open link"
-      >
-        <OpenLinkIcon />
-      </button>
+      {href ? (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(event) => {
+            event.stopPropagation();
+          }}
+          className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border)] bg-[color:var(--background)] text-[color:var(--muted)] cursor-pointer"
+          aria-label="Open link"
+          title="Open link"
+        >
+          <OpenLinkIcon />
+        </a>
+      ) : (
+        <span
+          className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border)] bg-[color:var(--background)] text-[color:var(--muted)] cursor-not-allowed opacity-45"
+          aria-hidden="true"
+        >
+          <OpenLinkIcon />
+        </span>
+      )}
     </div>
   );
 }
