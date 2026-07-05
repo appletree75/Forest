@@ -445,6 +445,38 @@ export async function addFinanceTransactionAction(
   };
 }
 
+export async function unlockFinancePanelAction(
+  _: ActionState,
+  formData: FormData,
+) {
+  const user = await getSessionUser();
+
+  if (!user || user.role !== "admin") {
+    return {
+      message: "Only administrators can access finance.",
+    };
+  }
+
+  const password = String(formData.get("password") ?? "");
+  const expectedPassword = process.env.FINANCE_PANEL_PASSWORD?.trim() || "forest-finance";
+
+  if (!password.trim()) {
+    return {
+      message: "Finance password is required.",
+    };
+  }
+
+  if (password !== expectedPassword) {
+    return {
+      message: "Incorrect finance password.",
+    };
+  }
+
+  return {
+    message: "Finance unlocked.",
+  };
+}
+
 export async function deleteFinanceTransactionAction(
   _: ActionState,
   formData: FormData,

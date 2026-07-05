@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   addFinanceTransactionAction,
   deleteFinanceTransactionAction,
+  unlockFinancePanelAction,
 } from "@/app/admin/actions";
 import type { FinanceTransaction, ManagedUser } from "@/lib/types";
 
@@ -27,6 +28,8 @@ export function FinancePanel({ transactions, recipients }: FinancePanelProps) {
   const [isPending, startTransition] = useTransition();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [message, setMessage] = useState("");
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [unlockMessage, setUnlockMessage] = useState("");
   const totalAmount = useMemo(
     () => transactions.reduce((sum, transaction) => sum + transaction.amount, 0),
     [transactions],
@@ -44,136 +47,198 @@ export function FinancePanel({ transactions, recipients }: FinancePanelProps) {
         <div>
           <h2 className="text-lg font-semibold">Finance</h2>
           <p className="mt-1 text-xs text-[color:var(--muted)]">
-            Track manual transactions in one simple list.
+            Protected transactions and payout records.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setIsModalOpen(true)}
-          className="h-10 rounded-xl bg-[color:var(--accent)] px-4 text-sm font-semibold text-white"
-        >
-          Add transaction
-        </button>
-      </div>
-
-      <div className="mb-4 grid gap-3 sm:grid-cols-2">
-        <div className="rounded-[20px] border border-[var(--border)] bg-white p-4">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[color:var(--muted)]">
-            Total Transactions
-          </div>
-          <div className="mt-2 text-2xl font-semibold">{transactions.length}</div>
-        </div>
-        <div className="rounded-[20px] border border-[var(--border)] bg-white p-4">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[color:var(--muted)]">
-            Total Amount
-          </div>
-          <div className="mt-2 text-2xl font-semibold">
-            ${totalAmount.toFixed(2)}
-          </div>
-        </div>
-      </div>
-
-      {message ? (
-        <div
-          className={`mb-4 flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium ${
-            messageTone === "rose"
-              ? "border border-rose-200 bg-rose-50 text-rose-700"
-              : messageTone === "emerald"
-                ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
-                : "border border-[var(--border)] bg-white text-[color:var(--foreground)]"
-          }`}
-        >
-          <span
-            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
-              messageTone === "rose"
-                ? "bg-rose-100"
-                : messageTone === "emerald"
-                  ? "bg-emerald-100"
-                  : "bg-[color:var(--background)]"
-            }`}
+        {isUnlocked ? (
+          <button
+            type="button"
+            onClick={() => setIsModalOpen(true)}
+            className="h-10 rounded-xl bg-[color:var(--accent)] px-4 text-sm font-semibold text-white"
           >
-            {messageTone === "rose" ? <TrashIcon /> : <StatusCheckIcon />}
-          </span>
-          {message}
-        </div>
-      ) : null}
-
-      <div className="rounded-[20px] border border-[var(--border)] bg-white p-4">
-        <div className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-[color:var(--muted)]">
-          Transactions
-        </div>
-        {transactions.length === 0 ? (
-          <div className="rounded-[18px] border border-dashed border-[var(--border)] bg-[color:var(--background)] px-4 py-4 text-sm text-[color:var(--muted)]">
-            No transactions yet.
-          </div>
+            Add transaction
+          </button>
         ) : (
-          <div className="space-y-3">
-            {transactions.map((transaction) => (
-              <div
-                key={transaction.id}
-                className="rounded-2xl border border-[var(--border)] bg-[color:var(--background)] p-4"
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold">{transaction.to}</div>
-                    <div className="mt-1 text-xs text-[color:var(--muted)]">
-                      {transaction.date}
-                    </div>
-                    {transaction.note ? (
-                      <div className="mt-2 text-sm text-[color:var(--muted)]">
-                        {transaction.note}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="flex shrink-0 items-start gap-3">
-                    <div className="text-right">
-                      <div className="text-base font-semibold">
-                        ${transaction.amount.toFixed(2)}
-                      </div>
-                    </div>
-                    <form
-                      onSubmit={(event) => {
-                        if (!window.confirm("Remove this transaction?")) {
-                          event.preventDefault();
-                          return;
-                        }
-                        event.preventDefault();
-
-                        const formData = new FormData(event.currentTarget);
-                        startTransition(async () => {
-                          const nextState = await deleteFinanceTransactionAction(
-                            { message: "" },
-                            formData,
-                          );
-                          setMessage(nextState.message);
-                          router.refresh();
-                        });
-                      }}
-                    >
-                      <input
-                        type="hidden"
-                        name="transactionId"
-                        value={transaction.id}
-                      />
-                      <button
-                        type="submit"
-                        disabled={isPending}
-                        className="flex h-9 w-9 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-rose-600 disabled:opacity-60"
-                        aria-label={`Remove transaction for ${transaction.to}`}
-                        title="Remove transaction"
-                      >
-                        <TrashIcon />
-                      </button>
-                    </form>
-                  </div>
-                </div>
-              </div>
-            ))}
+          <div className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">
+            Locked
           </div>
         )}
       </div>
 
-      {isModalOpen ? (
+      {!isUnlocked ? (
+        <form
+          className="rounded-[20px] border border-[var(--border)] bg-white p-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const formData = new FormData(event.currentTarget);
+
+            startTransition(async () => {
+              const nextState = await unlockFinancePanelAction(
+                { message: "" },
+                formData,
+              );
+              setUnlockMessage(nextState.message);
+              if (nextState.message === "Finance unlocked.") {
+                setIsUnlocked(true);
+              }
+            });
+          }}
+        >
+          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[color:var(--muted)]">
+            Finance Access
+          </div>
+          <p className="mt-2 text-sm text-[color:var(--muted)]">
+            Enter the finance password to view transactions and add new ones.
+          </p>
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+            <input
+              type="password"
+              name="password"
+              placeholder="Finance password"
+              className="h-10 flex-1 rounded-xl border border-[var(--border)] bg-[color:var(--background)] px-3 text-sm outline-none"
+            />
+            <button
+              type="submit"
+              disabled={isPending}
+              className="h-10 rounded-xl bg-[color:var(--accent)] px-4 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {isPending ? "Unlocking..." : "Unlock"}
+            </button>
+          </div>
+          {unlockMessage ? (
+            <div
+              className={`mt-3 rounded-xl px-3 py-2 text-sm ${
+                unlockMessage === "Finance unlocked."
+                  ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border border-rose-200 bg-rose-50 text-rose-700"
+              }`}
+            >
+              {unlockMessage}
+            </div>
+          ) : null}
+        </form>
+      ) : (
+        <>
+          <div className="mb-4 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-[20px] border border-[var(--border)] bg-white p-4">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[color:var(--muted)]">
+                Total Transactions
+              </div>
+              <div className="mt-2 text-2xl font-semibold">{transactions.length}</div>
+            </div>
+            <div className="rounded-[20px] border border-[var(--border)] bg-white p-4">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[color:var(--muted)]">
+                Total Amount
+              </div>
+              <div className="mt-2 text-2xl font-semibold">
+                ${totalAmount.toFixed(2)}
+              </div>
+            </div>
+          </div>
+
+          {message ? (
+            <div
+              className={`mb-4 flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium ${
+                messageTone === "rose"
+                  ? "border border-rose-200 bg-rose-50 text-rose-700"
+                  : messageTone === "emerald"
+                    ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : "border border-[var(--border)] bg-white text-[color:var(--foreground)]"
+              }`}
+            >
+              <span
+                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
+                  messageTone === "rose"
+                    ? "bg-rose-100"
+                    : messageTone === "emerald"
+                      ? "bg-emerald-100"
+                      : "bg-[color:var(--background)]"
+                }`}
+              >
+                {messageTone === "rose" ? <TrashIcon /> : <StatusCheckIcon />}
+              </span>
+              {message}
+            </div>
+          ) : null}
+
+          <div className="rounded-[20px] border border-[var(--border)] bg-white p-4">
+            <div className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-[color:var(--muted)]">
+              Transactions
+            </div>
+            {transactions.length === 0 ? (
+              <div className="rounded-[18px] border border-dashed border-[var(--border)] bg-[color:var(--background)] px-4 py-4 text-sm text-[color:var(--muted)]">
+                No transactions yet.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {transactions.map((transaction) => (
+                  <div
+                    key={transaction.id}
+                    className="rounded-2xl border border-[var(--border)] bg-[color:var(--background)] p-4"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold">{transaction.to}</div>
+                        <div className="mt-1 text-xs text-[color:var(--muted)]">
+                          {transaction.date}
+                        </div>
+                        {transaction.note ? (
+                          <div className="mt-2 text-sm text-[color:var(--muted)]">
+                            {transaction.note}
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="flex shrink-0 items-start gap-3">
+                        <div className="text-right">
+                          <div className="text-base font-semibold">
+                            ${transaction.amount.toFixed(2)}
+                          </div>
+                        </div>
+                        <form
+                          onSubmit={(event) => {
+                            if (!window.confirm("Remove this transaction?")) {
+                              event.preventDefault();
+                              return;
+                            }
+                            event.preventDefault();
+
+                            const formData = new FormData(event.currentTarget);
+                            startTransition(async () => {
+                              const nextState = await deleteFinanceTransactionAction(
+                                { message: "" },
+                                formData,
+                              );
+                              setMessage(nextState.message);
+                              router.refresh();
+                            });
+                          }}
+                        >
+                          <input
+                            type="hidden"
+                            name="transactionId"
+                            value={transaction.id}
+                          />
+                          <button
+                            type="submit"
+                            disabled={isPending}
+                            className="flex h-9 w-9 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-rose-600 disabled:opacity-60"
+                            aria-label={`Remove transaction for ${transaction.to}`}
+                            title="Remove transaction"
+                          >
+                            <TrashIcon />
+                          </button>
+                        </form>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {isModalOpen && isUnlocked ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(18,26,19,0.38)] p-4">
           <div className="w-full max-w-xl rounded-[30px] border border-[rgba(28,82,54,0.12)] bg-white p-5 shadow-[0_24px_80px_rgba(18,26,19,0.18)]">
             <div className="flex items-start justify-between gap-4">
