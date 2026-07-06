@@ -207,7 +207,7 @@ export function JobApplicationTable({
         pendingFlushRef,
         true,
         setSaveState,
-      ).then((flushedCleanly) => {
+      ).then((flushedCleanly: boolean) => {
         if (flushedCleanly) {
           void refreshSelectedTable();
         }
@@ -228,7 +228,7 @@ export function JobApplicationTable({
         pendingFlushRef,
         true,
         setSaveState,
-      ).then((flushedCleanly) => {
+      ).then((flushedCleanly: boolean) => {
         if (flushedCleanly) {
           void refreshSelectedTable();
         }
