@@ -1067,8 +1067,8 @@ export function JobApplicationTable({
       </div>
 
       {isAdmin ? (
-        <aside className="fixed right-6 top-1/2 z-30 hidden -translate-y-1/2 xl:block">
-          <div className="relative flex w-[360px] justify-end">
+        <aside className="fixed right-2 top-1/2 z-30 hidden -translate-y-1/2 xl:block">
+          <div className="relative flex w-[min(360px,calc(100vw-24px))] justify-end">
             <button
               type="button"
               onClick={() => setIsToolsSidebarOpen((current) => !current)}
@@ -1126,7 +1126,7 @@ export function JobApplicationTable({
                   : "pointer-events-none translate-x-6 scale-95 opacity-0"
               }`}
             >
-              <div className="min-h-0 max-h-[calc(100vh-48px)] overflow-x-hidden overflow-y-auto">
+              <div className="min-h-0 max-h-[calc(100vh-48px)] overflow-x-hidden overflow-y-auto pr-3 [scrollbar-gutter:stable]">
                 <div className="sticky top-0 z-10 flex items-center rounded-t-[24px] bg-[linear-gradient(135deg,#1f5d3d,#2c7a52)] px-5 py-5 text-white">
                   <span className="text-xs uppercase tracking-[0.28em] text-white/78">
                     Tools
