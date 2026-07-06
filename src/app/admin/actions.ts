@@ -5,7 +5,12 @@ import { redirect } from "next/navigation";
 
 import { getSessionUser, signOut } from "@/lib/auth";
 import { createAuditLog } from "@/lib/audit-log";
-import { createFinanceTransaction, deleteFinanceTransaction } from "@/lib/finance";
+import {
+  createFinanceTransaction,
+  deleteFinanceTransaction,
+  setFinancePassword,
+  verifyFinancePassword,
+} from "@/lib/finance";
 import {
   clearAllBlockedLoginRateLimits,
   clearLoginRateLimit,
@@ -458,7 +463,6 @@ export async function unlockFinancePanelAction(
   }
 
   const password = String(formData.get("password") ?? "");
-  const expectedPassword = process.env.FINANCE_PANEL_PASSWORD?.trim() || "forest-finance";
 
   if (!password.trim()) {
     return {
@@ -466,7 +470,7 @@ export async function unlockFinancePanelAction(
     };
   }
 
-  if (password !== expectedPassword) {
+  if (!(await verifyFinancePassword(password))) {
     return {
       message: "Incorrect finance password.",
     };
@@ -474,6 +478,66 @@ export async function unlockFinancePanelAction(
 
   return {
     message: "Finance unlocked.",
+  };
+}
+
+export async function resetFinancePasswordAction(
+  _: ActionState,
+  formData: FormData,
+) {
+  const user = await getSessionUser();
+
+  if (!user || user.role !== "admin") {
+    return {
+      message: "Only administrators can access finance.",
+    };
+  }
+
+  const currentPassword = String(formData.get("currentPassword") ?? "");
+  const nextPassword = String(formData.get("nextPassword") ?? "");
+  const confirmPassword = String(formData.get("confirmPassword") ?? "");
+
+  if (!currentPassword.trim()) {
+    return {
+      message: "Current finance password is required.",
+    };
+  }
+
+  if (!(await verifyFinancePassword(currentPassword))) {
+    return {
+      message: "Current finance password is incorrect.",
+    };
+  }
+
+  if (!nextPassword.trim()) {
+    return {
+      message: "New finance password is required.",
+    };
+  }
+
+  if (nextPassword.trim().length < 6) {
+    return {
+      message: "New finance password must be at least 6 characters.",
+    };
+  }
+
+  if (nextPassword !== confirmPassword) {
+    return {
+      message: "Finance password confirmation does not match.",
+    };
+  }
+
+  await setFinancePassword(nextPassword);
+  await createAuditLog({
+    actorUserId: user.id,
+    actorEmail: user.email,
+    action: "admin.finance_password_reset",
+    targetType: "finance_settings",
+    targetLabel: "Finance password",
+  });
+
+  return {
+    message: "Finance password updated.",
   };
 }
 

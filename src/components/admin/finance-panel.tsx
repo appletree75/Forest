@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   addFinanceTransactionAction,
   deleteFinanceTransactionAction,
+  resetFinancePasswordAction,
   unlockFinancePanelAction,
 } from "@/app/admin/actions";
 import type { FinanceTransaction, ManagedUser } from "@/lib/types";
@@ -27,9 +28,11 @@ export function FinancePanel({ transactions, recipients }: FinancePanelProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [unlockMessage, setUnlockMessage] = useState("");
+  const [passwordMessage, setPasswordMessage] = useState("");
   const totalAmount = useMemo(
     () => transactions.reduce((sum, transaction) => sum + transaction.amount, 0),
     [transactions],
@@ -51,13 +54,22 @@ export function FinancePanel({ transactions, recipients }: FinancePanelProps) {
           </p>
         </div>
         {isUnlocked ? (
-          <button
-            type="button"
-            onClick={() => setIsModalOpen(true)}
-            className="h-10 rounded-xl bg-[color:var(--accent)] px-4 text-sm font-semibold text-white"
-          >
-            Add transaction
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsPasswordModalOpen(true)}
+              className="h-10 rounded-xl border border-[var(--border)] bg-white px-4 text-sm font-semibold"
+            >
+              Reset password
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsModalOpen(true)}
+              className="h-10 rounded-xl bg-[color:var(--accent)] px-4 text-sm font-semibold text-white"
+            >
+              Add transaction
+            </button>
+          </div>
         ) : (
           <div className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">
             Locked
@@ -340,6 +352,112 @@ export function FinancePanel({ transactions, recipients }: FinancePanelProps) {
                     {isPending ? "Saving..." : "Save transaction"}
                   </button>
                 </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {isPasswordModalOpen && isUnlocked ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(18,26,19,0.38)] p-4">
+          <div className="w-full max-w-xl rounded-[30px] border border-[rgba(28,82,54,0.12)] bg-white p-5 shadow-[0_24px_80px_rgba(18,26,19,0.18)]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.22em] text-[color:var(--muted)]">
+                  Finance
+                </div>
+                <h3 className="mt-2 text-2xl font-semibold">Reset password</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsPasswordModalOpen(false);
+                  setPasswordMessage("");
+                }}
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[color:var(--background)] text-[color:var(--muted)]"
+              >
+                x
+              </button>
+            </div>
+
+            <form
+              className="mt-5"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const form = event.currentTarget;
+                const formData = new FormData(form);
+
+                startTransition(async () => {
+                  const nextState = await resetFinancePasswordAction(
+                    { message: "" },
+                    formData,
+                  );
+                  setPasswordMessage(nextState.message);
+
+                  if (nextState.message === "Finance password updated.") {
+                    form.reset();
+                    setIsPasswordModalOpen(false);
+                  }
+                });
+              }}
+            >
+              <div className="grid gap-4">
+                <label className="grid gap-2">
+                  <span className="text-sm font-medium">Current password</span>
+                  <input
+                    type="password"
+                    name="currentPassword"
+                    className="h-10 rounded-xl border border-[var(--border)] bg-[color:var(--background)] px-3 text-sm outline-none"
+                  />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-medium">New password</span>
+                  <input
+                    type="password"
+                    name="nextPassword"
+                    className="h-10 rounded-xl border border-[var(--border)] bg-[color:var(--background)] px-3 text-sm outline-none"
+                  />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-medium">Confirm new password</span>
+                  <input
+                    type="password"
+                    name="confirmPassword"
+                    className="h-10 rounded-xl border border-[var(--border)] bg-[color:var(--background)] px-3 text-sm outline-none"
+                  />
+                </label>
+              </div>
+
+              {passwordMessage ? (
+                <div
+                  className={`mt-4 rounded-xl px-3 py-2 text-sm ${
+                    passwordMessage === "Finance password updated."
+                      ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : "border border-rose-200 bg-rose-50 text-rose-700"
+                  }`}
+                >
+                  {passwordMessage}
+                </div>
+              ) : null}
+
+              <div className="mt-5 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPasswordModalOpen(false);
+                    setPasswordMessage("");
+                  }}
+                  className="h-10 rounded-xl border border-[var(--border)] bg-[color:var(--background)] px-4 text-sm font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isPending}
+                  className="h-10 rounded-xl bg-[color:var(--accent)] px-4 text-sm font-semibold text-white disabled:opacity-60"
+                >
+                  {isPending ? "Saving..." : "Save password"}
+                </button>
               </div>
             </form>
           </div>

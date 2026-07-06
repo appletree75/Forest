@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 
 import { unstable_cache, revalidateTag } from "next/cache";
 
-import { ensureDatabaseConnected } from "@/lib/database";
+import { ensureDatabaseConnected, getSettingsId } from "@/lib/database";
+import { defaultPermissionMatrix } from "@/lib/permission-config";
+import { hashPassword, verifyPassword } from "@/lib/passwords";
 import { prisma } from "@/lib/prisma";
 import type { FinanceTransaction } from "@/lib/types";
 
@@ -65,6 +67,52 @@ export async function deleteFinanceTransaction(id: string) {
   await ensureDatabaseConnected();
   await prisma.financeTransaction.delete({ where: { id } });
   revalidateTag("finance-transactions");
+}
+
+export async function verifyFinancePassword(password: string) {
+  const normalizedPassword = password.trim();
+
+  if (!normalizedPassword) {
+    return false;
+  }
+
+  await ensureDatabaseConnected();
+
+  const settings = await prisma.appSettings.upsert({
+    where: { id: getSettingsId() },
+    update: {},
+    create: {
+      id: getSettingsId(),
+      permissionMatrix: defaultPermissionMatrix,
+    },
+  });
+
+  if (settings.financePasswordHash) {
+    return verifyPassword(normalizedPassword, settings.financePasswordHash);
+  }
+
+  const fallbackPassword =
+    process.env.FINANCE_PANEL_PASSWORD?.trim() || "forest-finance";
+
+  return normalizedPassword === fallbackPassword;
+}
+
+export async function setFinancePassword(password: string) {
+  const normalizedPassword = password.trim();
+
+  await ensureDatabaseConnected();
+
+  await prisma.appSettings.upsert({
+    where: { id: getSettingsId() },
+    update: {
+      financePasswordHash: hashPassword(normalizedPassword),
+    },
+    create: {
+      id: getSettingsId(),
+      permissionMatrix: defaultPermissionMatrix,
+      financePasswordHash: hashPassword(normalizedPassword),
+    },
+  });
 }
 
 function sanitizeAmount(value: unknown) {
