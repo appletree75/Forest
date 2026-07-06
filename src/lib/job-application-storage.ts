@@ -9,6 +9,16 @@ import type {
   PersonalProfile,
 } from "@/lib/types";
 
+export class JobApplicationVersionConflictError extends Error {
+  currentVersion: number;
+
+  constructor(currentVersion: number) {
+    super("Job application table version conflict.");
+    this.name = "JobApplicationVersionConflictError";
+    this.currentVersion = currentVersion;
+  }
+}
+
 function fromStoredRow(row: {
   rowId: number;
   platform: Platform;
@@ -87,34 +97,73 @@ export async function saveJobApplicationRows(
   profileId: string,
   dayKey: string,
   rows: JobApplication[],
+  expectedVersion?: number,
 ) {
   await ensureDatabaseConnected();
 
-  await prisma.$transaction([
-    prisma.jobApplicationRow.deleteMany({
+  return prisma.$transaction(async (tx) => {
+    const currentState = await tx.jobApplicationTableState.findUnique({
+      where: {
+        profileId_dayKey: {
+          profileId,
+          dayKey,
+        },
+      },
+    });
+
+    const currentVersion = currentState?.version ?? 0;
+
+    if (
+      typeof expectedVersion === "number" &&
+      expectedVersion !== currentVersion
+    ) {
+      throw new JobApplicationVersionConflictError(currentVersion);
+    }
+
+    await tx.jobApplicationRow.deleteMany({
       where: {
         profileId,
         dayKey,
       },
-    }),
-    ...(rows.length > 0
-      ? [
-          prisma.jobApplicationRow.createMany({
-            data: rows.map((row) => ({
-              profileId,
-              dayKey,
-              rowId: row.id,
-              platform: row.platform as Platform,
-              company: row.company,
-              description: row.description,
-              url: row.url,
-              stack: row.stack,
-              status: toStoredStatus(row.status),
-            })),
-          }),
-        ]
-      : []),
-  ]);
+    });
+
+    if (rows.length > 0) {
+      await tx.jobApplicationRow.createMany({
+        data: rows.map((row) => ({
+          profileId,
+          dayKey,
+          rowId: row.id,
+          platform: row.platform as Platform,
+          company: row.company,
+          description: row.description,
+          url: row.url,
+          stack: row.stack,
+          status: toStoredStatus(row.status),
+        })),
+      });
+    }
+
+    const nextState = await tx.jobApplicationTableState.upsert({
+      where: {
+        profileId_dayKey: {
+          profileId,
+          dayKey,
+        },
+      },
+      update: {
+        version: {
+          increment: 1,
+        },
+      },
+      create: {
+        profileId,
+        dayKey,
+        version: 1,
+      },
+    });
+
+    return nextState.version;
+  });
 }
 
 export async function loadJobApplicationRows(
@@ -123,17 +172,37 @@ export async function loadJobApplicationRows(
 ) {
   await ensureDatabaseConnected();
 
-  const storedRows = await prisma.jobApplicationRow.findMany({
-    where: {
-      profileId,
-      dayKey,
-    },
-    orderBy: { rowId: "asc" },
-  });
+  const [storedRows, tableState] = await prisma.$transaction([
+    prisma.jobApplicationRow.findMany({
+      where: {
+        profileId,
+        dayKey,
+      },
+      orderBy: { rowId: "asc" },
+    }),
+    prisma.jobApplicationTableState.upsert({
+      where: {
+        profileId_dayKey: {
+          profileId,
+          dayKey,
+        },
+      },
+      update: {},
+      create: {
+        profileId,
+        dayKey,
+        version: 0,
+      },
+    }),
+  ]);
 
-  return storedRows.length > 0
-    ? storedRows.map(fromStoredRow)
-    : createInitialRows().map((row) => ({ ...row }));
+  return {
+    rows:
+      storedRows.length > 0
+        ? storedRows.map(fromStoredRow)
+        : createInitialRows().map((row) => ({ ...row })),
+    version: tableState.version,
+  };
 }
 
 export async function getJobApplicationTablesForProfiles(

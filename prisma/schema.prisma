@@ -114,6 +114,17 @@ model JobApplicationRow {
   @@index([profileId, dayKey])
 }
 
+model JobApplicationTableState {
+  profileId String
+  dayKey    String
+  version   Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@id([profileId, dayKey])
+  @@index([updatedAt])
+}
+
 model Interview {
   id              String          @id
   ownerUserId     String?

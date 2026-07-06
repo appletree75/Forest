@@ -69,6 +69,7 @@ export function JobApplicationTable({
   const hasMountedRef = useRef(false);
   const saveTimeoutRef = useRef<number | null>(null);
   const latestTablesRef = useRef<JobApplicationTables>(initialTables);
+  const tableVersionsRef = useRef<Record<string, number>>({});
   const dirtyTableKeysRef = useRef<Set<string>>(new Set());
   const isSavingRef = useRef(false);
   const pendingFlushRef = useRef(false);
@@ -84,6 +85,7 @@ export function JobApplicationTable({
   const [copyStatus, setCopyStatus] = useState("");
   const [pasteStatus, setPasteStatus] = useState("");
   const [isToolsSidebarOpen, setIsToolsSidebarOpen] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "conflict" | "error">("idle");
   const [selectedColumns, setSelectedColumns] = useState<CopyableColumnKey[]>([
     "platform",
     "company",
@@ -141,10 +143,13 @@ export function JobApplicationTable({
     const refreshSelectedTable = async () => {
       await flushDirtyTables(
         latestTablesRef,
+        tableVersionsRef,
         dirtyTableKeysRef,
         saveTimeoutRef,
         isSavingRef,
         pendingFlushRef,
+        false,
+        setSaveState,
       );
 
       try {
@@ -164,12 +169,14 @@ export function JobApplicationTable({
           profileId: string;
           dayKey: string;
           rows: JobApplication[];
+          version: number;
         };
 
         if (refreshRequestIdRef.current !== requestId) {
           return;
         }
 
+        tableVersionsRef.current[getTableKey(data.profileId, data.dayKey)] = data.version;
         isApplyingServerRowsRef.current = true;
         setTablesByProfile((currentTables) => ({
           ...currentTables,
@@ -178,6 +185,7 @@ export function JobApplicationTable({
             [data.dayKey]: data.rows,
           },
         }));
+        setSaveState("idle");
       } catch {
         // Ignore refresh failures and keep the current in-memory table.
       }
@@ -188,11 +196,13 @@ export function JobApplicationTable({
     const handlePageShow = () => {
       void flushDirtyTables(
         latestTablesRef,
+        tableVersionsRef,
         dirtyTableKeysRef,
         saveTimeoutRef,
         isSavingRef,
         pendingFlushRef,
         true,
+        setSaveState,
       ).finally(() => {
         void refreshSelectedTable();
       });
@@ -205,11 +215,13 @@ export function JobApplicationTable({
 
       void flushDirtyTables(
         latestTablesRef,
+        tableVersionsRef,
         dirtyTableKeysRef,
         saveTimeoutRef,
         isSavingRef,
         pendingFlushRef,
         true,
+        setSaveState,
       ).finally(() => {
         void refreshSelectedTable();
       });
@@ -238,12 +250,16 @@ export function JobApplicationTable({
     if (activeProfileId && selectedDayKey) {
       dirtyTableKeysRef.current.add(getTableKey(activeProfileId, selectedDayKey));
       queueSave(saveTimeoutRef, () => {
+        setSaveState("saving");
         void flushDirtyTables(
           latestTablesRef,
+          tableVersionsRef,
           dirtyTableKeysRef,
           saveTimeoutRef,
           isSavingRef,
           pendingFlushRef,
+          false,
+          setSaveState,
         );
       });
     }
@@ -253,11 +269,13 @@ export function JobApplicationTable({
     const flushPendingSave = () => {
       void flushDirtyTables(
         latestTablesRef,
+        tableVersionsRef,
         dirtyTableKeysRef,
         saveTimeoutRef,
         isSavingRef,
         pendingFlushRef,
         true,
+        setSaveState,
       );
     };
 
@@ -269,11 +287,13 @@ export function JobApplicationTable({
       window.removeEventListener("beforeunload", flushPendingSave);
       void flushDirtyTables(
         latestTablesRef,
+        tableVersionsRef,
         dirtyTableKeysRef,
         saveTimeoutRef,
         isSavingRef,
         pendingFlushRef,
         true,
+        setSaveState,
       );
     };
   }, []);
@@ -581,7 +601,32 @@ export function JobApplicationTable({
   return (
     <section className="rounded-[32px] border border-[var(--border)] bg-[color:var(--panel-strong)] p-6 shadow-[0_16px_50px_rgba(24,34,24,0.06)]">
       <div className="mb-6">
-        <h2 className="text-xl font-semibold">Application Table</h2>
+        <div className="flex items-center justify-between gap-4">
+          <h2 className="text-xl font-semibold">Application Table</h2>
+          <div
+            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+              saveState === "saving"
+                ? "bg-amber-50 text-amber-700"
+                : saveState === "saved"
+                  ? "bg-emerald-50 text-emerald-700"
+                  : saveState === "conflict"
+                    ? "bg-rose-50 text-rose-700"
+                    : saveState === "error"
+                      ? "bg-slate-100 text-slate-700"
+                      : "bg-white text-[color:var(--muted)]"
+            }`}
+          >
+            {saveState === "saving"
+              ? "Saving..."
+              : saveState === "saved"
+                ? "Saved"
+                : saveState === "conflict"
+                  ? "Refresh required"
+                  : saveState === "error"
+                    ? "Save failed"
+                    : "Idle"}
+          </div>
+        </div>
       </div>
 
       <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
@@ -1351,11 +1396,15 @@ function queueSave(
 
 async function flushDirtyTables(
   latestTablesRef: React.MutableRefObject<JobApplicationTables>,
+  tableVersionsRef: React.MutableRefObject<Record<string, number>>,
   dirtyTableKeysRef: React.MutableRefObject<Set<string>>,
   saveTimeoutRef: React.MutableRefObject<number | null>,
   isSavingRef: React.MutableRefObject<boolean>,
   pendingFlushRef: React.MutableRefObject<boolean>,
   useKeepalive = false,
+  setSaveState?: React.Dispatch<
+    React.SetStateAction<"idle" | "saving" | "saved" | "conflict" | "error">
+  >,
 ) {
   if (saveTimeoutRef.current !== null) {
     window.clearTimeout(saveTimeoutRef.current);
@@ -1379,15 +1428,35 @@ async function flushDirtyTables(
         const rows =
           latestTablesRef.current[profileId]?.[dayKey] ??
           createInitialRows().map((row) => ({ ...row }));
+        const tableKey = getTableKey(profileId, dayKey);
+        const version = tableVersionsRef.current[tableKey] ?? 0;
 
-        await saveJobApplicationRowsSnapshot(
+        const result = await saveJobApplicationRowsSnapshot(
           {
             profileId,
             dayKey,
             rows,
+            version,
           },
           useKeepalive,
         );
+
+        if (result.status === "success") {
+          tableVersionsRef.current[tableKey] = result.version;
+          setSaveState?.("saved");
+          window.setTimeout(() => {
+            setSaveState?.((current) => (current === "saved" ? "idle" : current));
+          }, 1200);
+          continue;
+        }
+
+        if (result.status === "conflict") {
+          tableVersionsRef.current[tableKey] = result.version;
+          setSaveState?.("conflict");
+          continue;
+        }
+
+        setSaveState?.("error");
       }
     }
   } finally {
@@ -1397,11 +1466,13 @@ async function flushDirtyTables(
       pendingFlushRef.current = false;
       await flushDirtyTables(
         latestTablesRef,
+        tableVersionsRef,
         dirtyTableKeysRef,
         saveTimeoutRef,
         isSavingRef,
         pendingFlushRef,
         useKeepalive,
+        setSaveState,
       );
     }
   }
@@ -1412,6 +1483,7 @@ async function saveJobApplicationRowsSnapshot(
     profileId: string;
     dayKey: string;
     rows: JobApplication[];
+    version: number;
   },
   useKeepalive: boolean,
 ) {
@@ -1422,12 +1494,12 @@ async function saveJobApplicationRowsSnapshot(
     const sent = navigator.sendBeacon("/api/job-applications", blob);
 
     if (sent) {
-      return;
+      return { status: "success", version: payload.version + 1 } as const;
     }
   }
 
   try {
-    await fetch("/api/job-applications", {
+    const response = await fetch("/api/job-applications", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -1435,8 +1507,27 @@ async function saveJobApplicationRowsSnapshot(
       body,
       keepalive: useKeepalive,
     });
+
+    if (response.status === 409) {
+      const data = (await response.json()) as { version?: number };
+      return {
+        status: "conflict",
+        version: typeof data.version === "number" ? data.version : payload.version,
+      } as const;
+    }
+
+    if (!response.ok) {
+      return { status: "error" } as const;
+    }
+
+    const data = (await response.json()) as { version?: number };
+    return {
+      status: "success",
+      version:
+        typeof data.version === "number" ? data.version : payload.version + 1,
+    } as const;
   } catch {
-    // Ignore transient save failures during navigation cleanup.
+    return { status: "error" } as const;
   }
 }
 

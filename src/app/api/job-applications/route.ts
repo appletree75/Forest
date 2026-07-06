@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getSessionUser } from "@/lib/auth";
 import {
+  JobApplicationVersionConflictError,
   loadJobApplicationRows,
   saveJobApplicationRows,
   saveJobApplicationTables,
@@ -34,9 +35,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: "Forbidden." }, { status: 403 });
     }
 
-    const rows = await loadJobApplicationRows(profileId, dayKey);
+    const { rows, version } = await loadJobApplicationRows(profileId, dayKey);
 
-    return NextResponse.json({ profileId, dayKey, rows });
+    return NextResponse.json({ profileId, dayKey, rows, version });
   } catch {
     return NextResponse.json(
       { message: "Unable to load job application table." },
@@ -58,6 +59,7 @@ export async function POST(request: Request) {
       profileId?: string;
       dayKey?: string;
       rows?: JobApplication[];
+      version?: number;
     };
 
     if (
@@ -75,8 +77,13 @@ export async function POST(request: Request) {
         );
       }
 
-      await saveJobApplicationRows(body.profileId, body.dayKey, body.rows);
-      return NextResponse.json({ ok: true });
+      const nextVersion = await saveJobApplicationRows(
+        body.profileId,
+        body.dayKey,
+        body.rows,
+        typeof body.version === "number" ? body.version : undefined,
+      );
+      return NextResponse.json({ ok: true, version: nextVersion });
     }
 
     if (!body.tables || typeof body.tables !== "object") {
@@ -89,7 +96,18 @@ export async function POST(request: Request) {
     await saveJobApplicationTables(body.tables);
 
     return NextResponse.json({ ok: true });
-  } catch {
+  } catch (error) {
+    if (error instanceof JobApplicationVersionConflictError) {
+      return NextResponse.json(
+        {
+          message: "This table was updated elsewhere. Please refresh the table.",
+          code: "VERSION_CONFLICT",
+          version: error.currentVersion,
+        },
+        { status: 409 },
+      );
+    }
+
     return NextResponse.json(
       { message: "Unable to save job application tables." },
       { status: 500 },
