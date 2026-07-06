@@ -141,7 +141,7 @@ export function JobApplicationTable({
     const requestId = ++refreshRequestIdRef.current;
 
     const refreshSelectedTable = async () => {
-      await flushDirtyTables(
+      const flushedCleanly = await flushDirtyTables(
         latestTablesRef,
         tableVersionsRef,
         dirtyTableKeysRef,
@@ -151,6 +151,10 @@ export function JobApplicationTable({
         false,
         setSaveState,
       );
+
+      if (!flushedCleanly) {
+        return;
+      }
 
       try {
         const response = await fetch(
@@ -203,8 +207,10 @@ export function JobApplicationTable({
         pendingFlushRef,
         true,
         setSaveState,
-      ).finally(() => {
-        void refreshSelectedTable();
+      ).then((flushedCleanly) => {
+        if (flushedCleanly) {
+          void refreshSelectedTable();
+        }
       });
     };
 
@@ -222,8 +228,10 @@ export function JobApplicationTable({
         pendingFlushRef,
         true,
         setSaveState,
-      ).finally(() => {
-        void refreshSelectedTable();
+      ).then((flushedCleanly) => {
+        if (flushedCleanly) {
+          void refreshSelectedTable();
+        }
       });
     };
 
@@ -1060,7 +1068,7 @@ export function JobApplicationTable({
 
       {isAdmin ? (
         <aside className="fixed right-6 top-1/2 z-30 hidden -translate-y-1/2 xl:block">
-          <div className="relative flex w-[320px] justify-end">
+          <div className="relative flex w-[360px] justify-end">
             <button
               type="button"
               onClick={() => setIsToolsSidebarOpen((current) => !current)}
@@ -1178,14 +1186,14 @@ export function JobApplicationTable({
                     {stackMessage ? (
                       <div className="text-xs text-[color:var(--muted)]">{stackMessage}</div>
                     ) : null}
-                    <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="grid gap-2">
                       {managedStackOptions.map((option) => {
                         return (
                           <div
                             key={option}
-                            className="flex items-center justify-between gap-2 rounded-xl border border-[var(--border)] bg-[color:var(--background)] px-3 py-2 text-sm"
+                            className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-[var(--border)] bg-[color:var(--background)] px-3 py-2 text-sm"
                           >
-                            <span className="truncate">{option}</span>
+                            <span className="min-w-0 truncate">{option}</span>
                             <button
                               type="button"
                               onClick={() => removeStackOption(option)}
@@ -1413,10 +1421,11 @@ async function flushDirtyTables(
 
   if (isSavingRef.current) {
     pendingFlushRef.current = true;
-    return;
+    return false;
   }
 
   isSavingRef.current = true;
+  let completedWithoutErrors = true;
 
   try {
     while (dirtyTableKeysRef.current.size > 0) {
@@ -1453,10 +1462,12 @@ async function flushDirtyTables(
         if (result.status === "conflict") {
           tableVersionsRef.current[tableKey] = result.version;
           setSaveState?.("conflict");
+          completedWithoutErrors = false;
           continue;
         }
 
         setSaveState?.("error");
+        completedWithoutErrors = false;
       }
     }
   } finally {
@@ -1464,7 +1475,7 @@ async function flushDirtyTables(
 
     if (pendingFlushRef.current) {
       pendingFlushRef.current = false;
-      await flushDirtyTables(
+      const pendingResult = await flushDirtyTables(
         latestTablesRef,
         tableVersionsRef,
         dirtyTableKeysRef,
@@ -1474,8 +1485,11 @@ async function flushDirtyTables(
         useKeepalive,
         setSaveState,
       );
+      completedWithoutErrors = completedWithoutErrors && pendingResult;
     }
   }
+
+  return completedWithoutErrors;
 }
 
 async function saveJobApplicationRowsSnapshot(

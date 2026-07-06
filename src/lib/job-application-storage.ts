@@ -1,4 +1,4 @@
-import { ApplicationStatus, Platform } from "@prisma/client";
+import { ApplicationStatus, Platform, Prisma } from "@prisma/client";
 
 import { createInitialRows } from "@/lib/job-applications";
 import { ensureDatabaseConnected } from "@/lib/database";
@@ -45,6 +45,56 @@ function toStoredStatus(status: JobApplication["status"]) {
   }
 
   return status as ApplicationStatus;
+}
+
+async function ensureJobApplicationTableState(
+  profileId: string,
+  dayKey: string,
+  initialVersion = 0,
+) {
+  const existing = await prisma.jobApplicationTableState.findUnique({
+    where: {
+      profileId_dayKey: {
+        profileId,
+        dayKey,
+      },
+    },
+  });
+
+  if (existing) {
+    return existing;
+  }
+
+  try {
+    return await prisma.jobApplicationTableState.create({
+      data: {
+        profileId,
+        dayKey,
+        version: initialVersion,
+      },
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      const createdByAnotherRequest =
+        await prisma.jobApplicationTableState.findUnique({
+          where: {
+            profileId_dayKey: {
+              profileId,
+              dayKey,
+            },
+          },
+        });
+
+      if (createdByAnotherRequest) {
+        return createdByAnotherRequest;
+      }
+    }
+
+    throw error;
+  }
 }
 
 export async function loadJobApplicationTables(): Promise<JobApplicationTables> {
@@ -100,6 +150,7 @@ export async function saveJobApplicationRows(
   expectedVersion?: number,
 ) {
   await ensureDatabaseConnected();
+  await ensureJobApplicationTableState(profileId, dayKey, 0);
 
   return prisma.$transaction(async (tx) => {
     const currentState = await tx.jobApplicationTableState.findUnique({
@@ -143,22 +194,17 @@ export async function saveJobApplicationRows(
       });
     }
 
-    const nextState = await tx.jobApplicationTableState.upsert({
+    const nextState = await tx.jobApplicationTableState.update({
       where: {
         profileId_dayKey: {
           profileId,
           dayKey,
         },
       },
-      update: {
+      data: {
         version: {
           increment: 1,
         },
-      },
-      create: {
-        profileId,
-        dayKey,
-        version: 1,
       },
     });
 
@@ -171,30 +217,15 @@ export async function loadJobApplicationRows(
   dayKey: string,
 ) {
   await ensureDatabaseConnected();
+  const tableState = await ensureJobApplicationTableState(profileId, dayKey, 0);
 
-  const [storedRows, tableState] = await prisma.$transaction([
-    prisma.jobApplicationRow.findMany({
-      where: {
-        profileId,
-        dayKey,
-      },
-      orderBy: { rowId: "asc" },
-    }),
-    prisma.jobApplicationTableState.upsert({
-      where: {
-        profileId_dayKey: {
-          profileId,
-          dayKey,
-        },
-      },
-      update: {},
-      create: {
-        profileId,
-        dayKey,
-        version: 0,
-      },
-    }),
-  ]);
+  const storedRows = await prisma.jobApplicationRow.findMany({
+    where: {
+      profileId,
+      dayKey,
+    },
+    orderBy: { rowId: "asc" },
+  });
 
   return {
     rows:
