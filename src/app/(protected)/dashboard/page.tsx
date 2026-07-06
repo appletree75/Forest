@@ -54,7 +54,7 @@ export default async function DashboardPage() {
         {!isBidder ? (
           <section className="mt-5 rounded-[28px] border border-[var(--border)] bg-white p-4 shadow-[0_10px_30px_rgba(24,34,24,0.04)]">
             <div className="mb-4 text-lg font-semibold">Interview</div>
-            <div className="grid gap-4 xl:grid-cols-3">
+            <div className="grid gap-4 xl:grid-cols-4">
               {Object.values(stats.interviewPeriods).map((period) => (
                 <section
                   key={period.label}

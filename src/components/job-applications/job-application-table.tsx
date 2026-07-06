@@ -85,6 +85,7 @@ export function JobApplicationTable({
   const [copyStatus, setCopyStatus] = useState("");
   const [pasteStatus, setPasteStatus] = useState("");
   const [isToolsSidebarOpen, setIsToolsSidebarOpen] = useState(false);
+  const [copiedProfileFieldKey, setCopiedProfileFieldKey] = useState("");
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "conflict" | "error">("idle");
   const [selectedColumns, setSelectedColumns] = useState<CopyableColumnKey[]>([
     "platform",
@@ -111,6 +112,8 @@ export function JobApplicationTable({
       ? tablesByProfile[activeProfileId]?.[selectedDayKey] ??
         createInitialRows().map((row) => ({ ...row }))
       : [];
+  const activeProfile =
+    filteredProfiles.find((profile) => profile.id === activeProfileId) ?? null;
   const managedStackOptions = customStackOptions;
 
   useEffect(() => {
@@ -583,6 +586,18 @@ export function JobApplicationTable({
     setCopiedKey(key);
     window.setTimeout(() => {
       setCopiedKey((current) => (current === key ? "" : current));
+    }, 1500);
+  };
+
+  const copyProfileField = async (value: string, fieldKey: string) => {
+    if (!value.trim()) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(value);
+    setCopiedProfileFieldKey(fieldKey);
+    window.setTimeout(() => {
+      setCopiedProfileFieldKey((current) => (current === fieldKey ? "" : current));
     }, 1500);
   };
 
@@ -1066,7 +1081,7 @@ export function JobApplicationTable({
         </div>
       </div>
 
-      {isAdmin ? (
+      {isAdmin || bidderReadOnly ? (
         <aside className="fixed right-2 top-1/2 z-30 hidden -translate-y-1/2 xl:block">
           <div className="relative flex w-[min(360px,calc(100vw-24px))] justify-end">
             <button
@@ -1133,6 +1148,82 @@ export function JobApplicationTable({
                   </span>
                 </div>
                 <div className="grid gap-4 bg-white/88 p-5">
+                {bidderReadOnly && activeProfile ? (
+                  <div className="rounded-[20px] border border-[var(--border)] bg-white px-4 py-4">
+                    <div className="mb-3 text-xs uppercase tracking-[0.22em] text-[color:var(--muted)]">
+                      Profile Details
+                    </div>
+                    <div className="grid gap-2">
+                      {[
+                        { label: "Full Name", value: activeProfile.fullName, key: "fullName" },
+                        { label: "Email", value: activeProfile.email, key: "email" },
+                        { label: "DOB", value: activeProfile.dob, key: "dob" },
+                        { label: "Address", value: activeProfile.address, key: "address" },
+                        { label: "Phone", value: activeProfile.phoneNumber, key: "phoneNumber" },
+                        { label: "LinkedIn", value: activeProfile.linkedinUrl, key: "linkedinUrl" },
+                      ].map((field) => {
+                        const isCopied = copiedProfileFieldKey === field.key;
+
+                        return (
+                          <div
+                            key={field.key}
+                            className="rounded-xl border border-[var(--border)] bg-[color:var(--background)] px-3 py-2"
+                          >
+                            <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[color:var(--muted)]">
+                              {field.label}
+                            </div>
+                            <div className="grid grid-cols-[minmax(0,1fr)_40px] items-center gap-3">
+                              <div className="min-w-0 truncate text-sm text-[color:var(--foreground)]">
+                                {field.value || "-"}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => copyProfileField(field.value, field.key)}
+                                disabled={!field.value.trim()}
+                                className="flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border)] bg-white text-[color:var(--foreground)] disabled:cursor-not-allowed disabled:text-slate-300"
+                                aria-label={`Copy ${field.label}`}
+                                title={`Copy ${field.label}`}
+                              >
+                                {isCopied ? (
+                                  <svg
+                                    width="14"
+                                    height="14"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="#16a34a"
+                                    strokeWidth="3"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    aria-hidden="true"
+                                  >
+                                    <path d="M20 6 9 17l-5-5" />
+                                  </svg>
+                                ) : (
+                                  <svg
+                                    width="14"
+                                    height="14"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    aria-hidden="true"
+                                  >
+                                    <rect x="9" y="9" width="13" height="13" />
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                                  </svg>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+                {isAdmin ? (
+                  <>
                 <div className="rounded-[20px] border border-[var(--border)] bg-white px-4 py-4">
                   <div className="mb-3 text-xs uppercase tracking-[0.22em] text-[color:var(--muted)]">
                     Budget
@@ -1267,6 +1358,8 @@ export function JobApplicationTable({
                     ? `Source: ${copiedTable.profileName || copiedTable.profileId} / ${copiedTable.dayKey}`
                     : "No copied table"}
                 </div>
+                  </>
+                ) : null}
                 </div>
               </div>
             </div>

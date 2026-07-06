@@ -1,10 +1,13 @@
 import { ensureDatabaseConnected } from "@/lib/database";
+import { applyImportedEventOverrides, importIcsEventsForSources } from "@/lib/ics-calendar";
+import { getAllIcsCalendarSources } from "@/lib/ics-calendar-storage";
+import { getAllIcsEventOverrides } from "@/lib/ics-event-overrides-storage";
 import { getInterviewEvents } from "@/lib/interview-storage";
 import { prisma } from "@/lib/prisma";
 import type { Role } from "@/lib/types";
 
 type PeriodKey = "today" | "week" | "month" | "total";
-type InterviewPeriodKey = "today" | "week" | "month";
+type InterviewPeriodKey = "today" | "week" | "month" | "total";
 
 export type PeriodApplicationStats = {
   label: string;
@@ -47,7 +50,7 @@ export async function getDashboardStats(options?: {
   try {
     await ensureDatabaseConnected();
 
-    const [rows, callers, interviewEvents] = await Promise.all([
+    const [rows, callers, interviewEvents, icsCalendarSources, icsEventOverrides] = await Promise.all([
       prisma.jobApplicationRow.findMany({
         select: {
           profileId: true,
@@ -66,6 +69,8 @@ export async function getDashboardStats(options?: {
         },
       }),
       getInterviewEvents(),
+      getAllIcsCalendarSources(),
+      getAllIcsEventOverrides(),
     ]);
 
     const visibleProfileIdSet = options?.visibleProfileIds?.length
@@ -99,10 +104,30 @@ export async function getDashboardStats(options?: {
       return acc;
     }, {} as Record<PeriodKey, PeriodApplicationStats>);
 
+    const importedCalendarEvents = applyImportedEventOverrides(
+      await importIcsEventsForSources(icsCalendarSources),
+      icsEventOverrides,
+    );
+
+    const normalizedInterviewEvents = interviewEvents.map((event) => ({
+      dayKey: event.scheduledDate,
+      callerUserId: event.callerUserId,
+    }));
+    const normalizedImportedEvents = importedCalendarEvents.map((event) => ({
+      dayKey: new Date(event.start).toISOString().slice(0, 10),
+      callerUserId: event.callerUserId ?? "",
+    }));
+    const allInterviewEvents = [
+      ...normalizedInterviewEvents,
+      ...normalizedImportedEvents,
+    ];
+
     const visibleInterviewEvents =
       options?.currentUserRole === "caller" && options.currentUserId
-        ? interviewEvents.filter((event) => event.callerUserId === options.currentUserId)
-        : interviewEvents;
+        ? allInterviewEvents.filter(
+            (event) => event.callerUserId === options.currentUserId,
+          )
+        : allInterviewEvents;
 
     const scopedCallers =
       options?.currentUserRole === "caller" && options.currentUserId
@@ -113,6 +138,7 @@ export async function getDashboardStats(options?: {
       today: (dayKey) => dayKey === todayKey,
       week: (dayKey) => dayKey >= weekStartKey,
       month: (dayKey) => dayKey >= monthStartKey,
+      total: () => true,
     };
 
     const interviewPeriods = (Object.keys(interviewPeriodFilters) as InterviewPeriodKey[]).reduce<
@@ -187,6 +213,7 @@ function createEmptyDashboardStats(): DashboardStats {
       today: { label: "Today", totalInterviews: 0, callers: [] },
       week: { label: "This Week", totalInterviews: 0, callers: [] },
       month: { label: "This Month", totalInterviews: 0, callers: [] },
+      total: { label: "Total", totalInterviews: 0, callers: [] },
     },
     databaseAvailable: false,
   };
