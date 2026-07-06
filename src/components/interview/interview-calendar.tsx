@@ -40,6 +40,7 @@ const timezoneOptions = [
   { label: "Local", timeZone: "local" },
   { label: "JST", timeZone: "Asia/Tokyo" },
   { label: "CET", timeZone: "Europe/Paris" },
+  { label: "CST", timeZone: "America/Chicago" },
   { label: "EST", timeZone: "America/New_York" },
   { label: "PST", timeZone: "America/Los_Angeles" },
   { label: "GMT", timeZone: "Etc/UTC" },

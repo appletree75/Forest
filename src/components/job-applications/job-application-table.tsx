@@ -69,6 +69,11 @@ export function JobApplicationTable({
   const hasMountedRef = useRef(false);
   const saveTimeoutRef = useRef<number | null>(null);
   const latestTablesRef = useRef<JobApplicationTables>(initialTables);
+  const dirtyTableKeysRef = useRef<Set<string>>(new Set());
+  const isSavingRef = useRef(false);
+  const pendingFlushRef = useRef(false);
+  const refreshRequestIdRef = useRef(0);
+  const isApplyingServerRowsRef = useRef(false);
   const isAdmin = role === "admin";
   const [selectedBidderId, setSelectedBidderId] = useState("all");
   const [selectedProfileId, setSelectedProfileId] = useState(
@@ -104,7 +109,7 @@ export function JobApplicationTable({
       ? tablesByProfile[activeProfileId]?.[selectedDayKey] ??
         createInitialRows().map((row) => ({ ...row }))
       : [];
-  const managedStackOptions = getManagedStackOptions(customStackOptions);
+  const managedStackOptions = customStackOptions;
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -127,17 +132,133 @@ export function JobApplicationTable({
   }, [tablesByProfile]);
 
   useEffect(() => {
+    if (!activeProfileId || !selectedDayKey) {
+      return;
+    }
+
+    const requestId = ++refreshRequestIdRef.current;
+
+    const refreshSelectedTable = async () => {
+      await flushDirtyTables(
+        latestTablesRef,
+        dirtyTableKeysRef,
+        saveTimeoutRef,
+        isSavingRef,
+        pendingFlushRef,
+      );
+
+      try {
+        const response = await fetch(
+          `/api/job-applications?profileId=${encodeURIComponent(activeProfileId)}&dayKey=${encodeURIComponent(selectedDayKey)}`,
+          {
+            method: "GET",
+            cache: "no-store",
+          },
+        );
+
+        if (!response.ok) {
+          return;
+        }
+
+        const data = (await response.json()) as {
+          profileId: string;
+          dayKey: string;
+          rows: JobApplication[];
+        };
+
+        if (refreshRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        isApplyingServerRowsRef.current = true;
+        setTablesByProfile((currentTables) => ({
+          ...currentTables,
+          [data.profileId]: {
+            ...(currentTables[data.profileId] ?? {}),
+            [data.dayKey]: data.rows,
+          },
+        }));
+      } catch {
+        // Ignore refresh failures and keep the current in-memory table.
+      }
+    };
+
+    void refreshSelectedTable();
+
+    const handlePageShow = () => {
+      void flushDirtyTables(
+        latestTablesRef,
+        dirtyTableKeysRef,
+        saveTimeoutRef,
+        isSavingRef,
+        pendingFlushRef,
+        true,
+      ).finally(() => {
+        void refreshSelectedTable();
+      });
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      void flushDirtyTables(
+        latestTablesRef,
+        dirtyTableKeysRef,
+        saveTimeoutRef,
+        isSavingRef,
+        pendingFlushRef,
+        true,
+      ).finally(() => {
+        void refreshSelectedTable();
+      });
+    };
+
+    window.addEventListener("pageshow", handlePageShow);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("pageshow", handlePageShow);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [activeProfileId, selectedDayKey]);
+
+  useEffect(() => {
     if (!hasMountedRef.current) {
       hasMountedRef.current = true;
       return;
     }
 
-    queueSave(tablesByProfile, saveTimeoutRef);
-  }, [tablesByProfile]);
+    if (isApplyingServerRowsRef.current) {
+      isApplyingServerRowsRef.current = false;
+      return;
+    }
+
+    if (activeProfileId && selectedDayKey) {
+      dirtyTableKeysRef.current.add(getTableKey(activeProfileId, selectedDayKey));
+      queueSave(saveTimeoutRef, () => {
+        void flushDirtyTables(
+          latestTablesRef,
+          dirtyTableKeysRef,
+          saveTimeoutRef,
+          isSavingRef,
+          pendingFlushRef,
+        );
+      });
+    }
+  }, [activeProfileId, selectedDayKey, tablesByProfile]);
 
   useEffect(() => {
     const flushPendingSave = () => {
-      void flushQueuedSave(latestTablesRef.current, saveTimeoutRef, true);
+      void flushDirtyTables(
+        latestTablesRef,
+        dirtyTableKeysRef,
+        saveTimeoutRef,
+        isSavingRef,
+        pendingFlushRef,
+        true,
+      );
     };
 
     window.addEventListener("pagehide", flushPendingSave);
@@ -146,7 +267,14 @@ export function JobApplicationTable({
     return () => {
       window.removeEventListener("pagehide", flushPendingSave);
       window.removeEventListener("beforeunload", flushPendingSave);
-      void flushQueuedSave(latestTablesRef.current, saveTimeoutRef, true);
+      void flushDirtyTables(
+        latestTablesRef,
+        dirtyTableKeysRef,
+        saveTimeoutRef,
+        isSavingRef,
+        pendingFlushRef,
+        true,
+      );
     };
   }, []);
   const updateRow = <K extends keyof JobApplication>(
@@ -382,6 +510,10 @@ export function JobApplicationTable({
   };
 
   const removeStackOption = (stackName: string) => {
+    if (!window.confirm(`Remove stack "${stackName}"?`)) {
+      return;
+    }
+
     const nextCustomStacks = customStackOptions.filter((option) => option !== stackName);
     setCustomStackOptions(nextCustomStacks);
     storeCustomStacks(nextCustomStacks);
@@ -941,7 +1073,7 @@ export function JobApplicationTable({
                   : "pointer-events-none translate-x-6 scale-95 opacity-0"
               }`}
             >
-              <div className="min-h-0 max-h-[calc(100vh-48px)] overflow-y-auto">
+              <div className="min-h-0 max-h-[calc(100vh-48px)] overflow-x-hidden overflow-y-auto">
                 <div className="sticky top-0 z-10 flex items-center rounded-t-[24px] bg-[linear-gradient(135deg,#1f5d3d,#2c7a52)] px-5 py-5 text-white">
                   <span className="text-xs uppercase tracking-[0.28em] text-white/78">
                     Tools
@@ -976,8 +1108,8 @@ export function JobApplicationTable({
                   <div className="mb-3 text-xs uppercase tracking-[0.22em] text-[color:var(--muted)]">
                     Stacks
                   </div>
-                  <div className="grid gap-3">
-                    <div className="flex gap-2">
+                    <div className="grid gap-3">
+                      <div className="flex gap-2">
                       <input
                         value={newStackName}
                         onChange={(event) => setNewStackName(event.target.value)}
@@ -1001,29 +1133,21 @@ export function JobApplicationTable({
                     {stackMessage ? (
                       <div className="text-xs text-[color:var(--muted)]">{stackMessage}</div>
                     ) : null}
-                    <div className="grid gap-2">
+                    <div className="grid gap-2 sm:grid-cols-2">
                       {managedStackOptions.map((option) => {
-                        const isDefaultStack = stackOptions.includes(option as (typeof stackOptions)[number]);
-
                         return (
                           <div
                             key={option}
-                            className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[color:var(--background)] px-3 py-2 text-sm"
+                            className="flex items-center justify-between gap-2 rounded-xl border border-[var(--border)] bg-[color:var(--background)] px-3 py-2 text-sm"
                           >
-                            <span>{option}</span>
-                            {isDefaultStack ? (
-                              <span className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">
-                                Default
-                              </span>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => removeStackOption(option)}
-                                className="text-xs font-semibold text-rose-700"
-                              >
-                                Remove
-                              </button>
-                            )}
+                            <span className="truncate">{option}</span>
+                            <button
+                              type="button"
+                              onClick={() => removeStackOption(option)}
+                              className="shrink-0 text-xs font-semibold text-rose-700"
+                            >
+                              Remove
+                            </button>
                           </div>
                         );
                       })}
@@ -1181,14 +1305,14 @@ function getStoredCustomStacks() {
   const raw = window.localStorage.getItem(customStackOptionsStorageKey);
 
   if (!raw) {
-    return [];
+    return [...stackOptions];
   }
 
   try {
     const parsed = JSON.parse(raw) as unknown;
 
     if (!Array.isArray(parsed)) {
-      return [];
+      return [...stackOptions];
     }
 
     return parsed
@@ -1197,7 +1321,7 @@ function getStoredCustomStacks() {
       .filter(Boolean);
   } catch {
     window.localStorage.removeItem(customStackOptionsStorageKey);
-    return [];
+    return [...stackOptions];
   }
 }
 
@@ -1212,26 +1336,25 @@ function storeCustomStacks(values: string[]) {
   );
 }
 
-function getManagedStackOptions(customStackValues: string[]) {
-  return Array.from(new Set([...stackOptions, ...customStackValues]));
-}
-
 function queueSave(
-  tables: JobApplicationTables,
   saveTimeoutRef: React.MutableRefObject<number | null>,
+  callback: () => void,
 ) {
   if (saveTimeoutRef.current !== null) {
     window.clearTimeout(saveTimeoutRef.current);
   }
 
   saveTimeoutRef.current = window.setTimeout(() => {
-    void flushQueuedSave(tables, saveTimeoutRef);
+    callback();
   }, 800);
 }
 
-async function flushQueuedSave(
-  tables: JobApplicationTables,
+async function flushDirtyTables(
+  latestTablesRef: React.MutableRefObject<JobApplicationTables>,
+  dirtyTableKeysRef: React.MutableRefObject<Set<string>>,
   saveTimeoutRef: React.MutableRefObject<number | null>,
+  isSavingRef: React.MutableRefObject<boolean>,
+  pendingFlushRef: React.MutableRefObject<boolean>,
   useKeepalive = false,
 ) {
   if (saveTimeoutRef.current !== null) {
@@ -1239,7 +1362,60 @@ async function flushQueuedSave(
     saveTimeoutRef.current = null;
   }
 
-  const body = JSON.stringify({ tables });
+  if (isSavingRef.current) {
+    pendingFlushRef.current = true;
+    return;
+  }
+
+  isSavingRef.current = true;
+
+  try {
+    while (dirtyTableKeysRef.current.size > 0) {
+      const keys = Array.from(dirtyTableKeysRef.current);
+      dirtyTableKeysRef.current.clear();
+
+      for (const key of keys) {
+        const { profileId, dayKey } = parseTableKey(key);
+        const rows =
+          latestTablesRef.current[profileId]?.[dayKey] ??
+          createInitialRows().map((row) => ({ ...row }));
+
+        await saveJobApplicationRowsSnapshot(
+          {
+            profileId,
+            dayKey,
+            rows,
+          },
+          useKeepalive,
+        );
+      }
+    }
+  } finally {
+    isSavingRef.current = false;
+
+    if (pendingFlushRef.current) {
+      pendingFlushRef.current = false;
+      await flushDirtyTables(
+        latestTablesRef,
+        dirtyTableKeysRef,
+        saveTimeoutRef,
+        isSavingRef,
+        pendingFlushRef,
+        useKeepalive,
+      );
+    }
+  }
+}
+
+async function saveJobApplicationRowsSnapshot(
+  payload: {
+    profileId: string;
+    dayKey: string;
+    rows: JobApplication[];
+  },
+  useKeepalive: boolean,
+) {
+  const body = JSON.stringify(payload);
 
   if (useKeepalive && typeof navigator !== "undefined" && "sendBeacon" in navigator) {
     const blob = new Blob([body], { type: "application/json" });
@@ -1262,6 +1438,18 @@ async function flushQueuedSave(
   } catch {
     // Ignore transient save failures during navigation cleanup.
   }
+}
+
+function getTableKey(profileId: string, dayKey: string) {
+  return `${profileId}::${dayKey}`;
+}
+
+function parseTableKey(value: string) {
+  const [profileId, dayKey] = value.split("::");
+  return {
+    profileId,
+    dayKey,
+  };
 }
 
 function formatCurrency(value: number) {

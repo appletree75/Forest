@@ -2,10 +2,48 @@ import { NextResponse } from "next/server";
 
 import { getSessionUser } from "@/lib/auth";
 import {
+  loadJobApplicationRows,
   saveJobApplicationRows,
   saveJobApplicationTables,
 } from "@/lib/job-application-storage";
+import { getVisibleProfilesForUser } from "@/lib/profiles";
 import type { JobApplication, JobApplicationTables } from "@/lib/types";
+
+export async function GET(request: Request) {
+  try {
+    const sessionUser = await getSessionUser();
+
+    if (!sessionUser) {
+      return NextResponse.json({ message: "Unauthorized." }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const profileId = searchParams.get("profileId")?.trim() ?? "";
+    const dayKey = searchParams.get("dayKey")?.trim() ?? "";
+
+    if (!profileId || !dayKey) {
+      return NextResponse.json(
+        { message: "profileId and dayKey are required." },
+        { status: 400 },
+      );
+    }
+
+    const visibleProfiles = await getVisibleProfilesForUser(sessionUser);
+
+    if (!visibleProfiles.some((profile) => profile.id === profileId)) {
+      return NextResponse.json({ message: "Forbidden." }, { status: 403 });
+    }
+
+    const rows = await loadJobApplicationRows(profileId, dayKey);
+
+    return NextResponse.json({ profileId, dayKey, rows });
+  } catch {
+    return NextResponse.json(
+      { message: "Unable to load job application table." },
+      { status: 500 },
+    );
+  }
+}
 
 export async function POST(request: Request) {
   try {

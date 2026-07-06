@@ -117,6 +117,25 @@ export async function saveJobApplicationRows(
   ]);
 }
 
+export async function loadJobApplicationRows(
+  profileId: string,
+  dayKey: string,
+) {
+  await ensureDatabaseConnected();
+
+  const storedRows = await prisma.jobApplicationRow.findMany({
+    where: {
+      profileId,
+      dayKey,
+    },
+    orderBy: { rowId: "asc" },
+  });
+
+  return storedRows.length > 0
+    ? storedRows.map(fromStoredRow)
+    : createInitialRows().map((row) => ({ ...row }));
+}
+
 export async function getJobApplicationTablesForProfiles(
   profiles: PersonalProfile[],
   dayKey: string,
