@@ -1413,7 +1413,7 @@ async function flushDirtyTables(
   setSaveState?: React.Dispatch<
     React.SetStateAction<"idle" | "saving" | "saved" | "conflict" | "error">
   >,
-) {
+): Promise<boolean> {
   if (saveTimeoutRef.current !== null) {
     window.clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = null;
