@@ -145,7 +145,7 @@ export async function getDashboardStats(options?: {
       Record<InterviewPeriodKey, InterviewPeriodStats>
     >((acc, key) => {
       const filteredEvents = visibleInterviewEvents.filter((event) =>
-        interviewPeriodFilters[key](event.scheduledDate),
+        interviewPeriodFilters[key](event.dayKey),
       );
 
       acc[key] = {
