@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 import { useActionState } from "react";
 import { useRouter } from "next/navigation";
+import { useTransition } from "react";
 
 import {
   createProfileAction,
   deleteProfileAction,
+  reorderProfilesAction,
   updateProfileAction,
 } from "@/app/(protected)/profiles/actions";
 import type { PersonalProfile } from "@/lib/types";
@@ -17,15 +19,20 @@ const initialState = {
 
 type ProfileDirectoryProps = {
   profiles: PersonalProfile[];
+  canManage: boolean;
 };
 
-export function ProfileDirectory({ profiles }: ProfileDirectoryProps) {
+export function ProfileDirectory({ profiles, canManage }: ProfileDirectoryProps) {
   const router = useRouter();
   const [createState, createAction, createPending] = useActionState(
     createProfileAction,
     initialState,
   );
+  const [isReordering, startReorderTransition] = useTransition();
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [orderedProfiles, setOrderedProfiles] = useState(profiles);
+  const [draggedProfileId, setDraggedProfileId] = useState("");
+  const [reorderMessage, setReorderMessage] = useState("");
 
   useEffect(() => {
     if (createState.message !== "Profile created.") {
@@ -58,15 +65,81 @@ export function ProfileDirectory({ profiles }: ProfileDirectoryProps) {
         <button
           type="button"
           onClick={() => setCreateModalOpen(true)}
+          disabled={!canManage}
           className="h-11 rounded-xl bg-[color:var(--accent)] px-5 text-sm font-semibold text-white"
         >
           New Profile
         </button>
       </div>
 
+      {reorderMessage ? (
+        <div className="mb-4 rounded-2xl border border-[var(--border)] bg-white px-4 py-3 text-sm">
+          {reorderMessage}
+        </div>
+      ) : null}
+
       <div className="grid gap-4">
-        {profiles.map((profile) => (
-          <ProfileCard key={profile.id} profile={profile} />
+        {orderedProfiles.map((profile) => (
+          <div
+            key={profile.id}
+            draggable={canManage}
+            onDragStart={() => setDraggedProfileId(profile.id)}
+            onDragOver={(event) => {
+              if (!canManage || !draggedProfileId || draggedProfileId === profile.id) {
+                return;
+              }
+
+              event.preventDefault();
+            }}
+            onDrop={(event) => {
+              if (!canManage || !draggedProfileId || draggedProfileId === profile.id) {
+                return;
+              }
+
+              event.preventDefault();
+
+              const currentProfiles = [...orderedProfiles];
+              const fromIndex = currentProfiles.findIndex(
+                (item) => item.id === draggedProfileId,
+              );
+              const toIndex = currentProfiles.findIndex(
+                (item) => item.id === profile.id,
+              );
+
+              if (fromIndex === -1 || toIndex === -1) {
+                return;
+              }
+
+              const nextProfiles = [...currentProfiles];
+              const [movedProfile] = nextProfiles.splice(fromIndex, 1);
+              nextProfiles.splice(toIndex, 0, movedProfile);
+
+              setOrderedProfiles(nextProfiles);
+              setDraggedProfileId("");
+              setReorderMessage("Saving profile order...");
+
+              startReorderTransition(async () => {
+                const result = await reorderProfilesAction(
+                  nextProfiles.map((item) => item.id),
+                );
+                setReorderMessage(result.message);
+                router.refresh();
+                window.setTimeout(() => {
+                  setReorderMessage((current) =>
+                    current === result.message ? "" : current,
+                  );
+                }, 1800);
+              });
+            }}
+            onDragEnd={() => setDraggedProfileId("")}
+            className={canManage ? "cursor-grab active:cursor-grabbing" : ""}
+          >
+            <ProfileCard
+              profile={profile}
+              canManage={canManage}
+              showDragState={draggedProfileId === profile.id || isReordering}
+            />
+          </div>
         ))}
       </div>
 
@@ -139,7 +212,15 @@ export function ProfileDirectory({ profiles }: ProfileDirectoryProps) {
   );
 }
 
-function ProfileCard({ profile }: { profile: PersonalProfile }) {
+function ProfileCard({
+  profile,
+  canManage,
+  showDragState,
+}: {
+  profile: PersonalProfile;
+  canManage: boolean;
+  showDragState: boolean;
+}) {
   const router = useRouter();
   const [updateState, updateAction, updatePending] = useActionState(
     updateProfileAction,
@@ -183,7 +264,7 @@ function ProfileCard({ profile }: { profile: PersonalProfile }) {
   }, [deleteState.message, router]);
 
   return (
-    <article className="overflow-hidden rounded-[26px] border border-[rgba(28,82,54,0.1)] bg-white shadow-[0_12px_36px_rgba(24,34,24,0.05)]">
+    <article className={`overflow-hidden rounded-[26px] border border-[rgba(28,82,54,0.1)] bg-white shadow-[0_12px_36px_rgba(24,34,24,0.05)] ${showDragState ? "ring-2 ring-[rgba(28,82,54,0.12)]" : ""}`}>
       <button
         type="button"
         onClick={() => setIsOpen((current) => !current)}
@@ -199,6 +280,15 @@ function ProfileCard({ profile }: { profile: PersonalProfile }) {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          {canManage ? (
+            <span
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-white text-[color:var(--muted)]"
+              aria-hidden="true"
+              title="Drag to reorder"
+            >
+              <GripIcon />
+            </span>
+          ) : null}
           <span className="rounded-full border border-[rgba(28,82,54,0.1)] bg-[color:var(--background)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--muted)]">
             {isOpen ? "Open" : "Closed"}
           </span>
@@ -448,6 +538,24 @@ function CloseIcon() {
     >
       <path d="M18 6 6 18" />
       <path d="m6 6 12 12" />
+    </svg>
+  );
+}
+
+function GripIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="currentColor"
+    >
+      <circle cx="8" cy="6.5" r="1.25" />
+      <circle cx="16" cy="6.5" r="1.25" />
+      <circle cx="8" cy="12" r="1.25" />
+      <circle cx="16" cy="12" r="1.25" />
+      <circle cx="8" cy="17.5" r="1.25" />
+      <circle cx="16" cy="17.5" r="1.25" />
     </svg>
   );
 }

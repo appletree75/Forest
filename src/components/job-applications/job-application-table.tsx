@@ -900,7 +900,7 @@ export function JobApplicationTable({
                             {result.stack || result.description || "-"}
                           </div>
                         </button>
-                        <div className="grid grid-cols-[minmax(0,1fr)_36px] items-center gap-2">
+                        <div className="grid grid-cols-[minmax(0,1fr)_36px_36px] items-center gap-2">
                           <div className="truncate text-xs text-[color:var(--muted)]">
                             {result.url || "-"}
                           </div>
@@ -942,6 +942,32 @@ export function JobApplicationTable({
                                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                               </svg>
                             )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openUrl(result.url)}
+                            disabled={!result.url}
+                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border)] bg-white text-[color:var(--foreground)] disabled:cursor-not-allowed disabled:text-slate-300"
+                            aria-label="Open URL"
+                            title="Open URL"
+                          >
+                            <svg
+                              width="14"
+                              height="14"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              aria-hidden="true"
+                            >
+                              <path d="M14 3h7v7" />
+                              <path d="M10 14 21 3" />
+                              <path d="M21 14v7h-7" />
+                              <path d="M3 10V3h7" />
+                              <path d="M3 21l7-7" />
+                            </svg>
                           </button>
                         </div>
                       </div>

@@ -65,6 +65,7 @@ model Session {
 
 model Profile {
   id               String              @id
+  sortOrder        Int                 @default(0)
   fullName         String
   email            String
   dob              String

@@ -3,7 +3,12 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 
 import { getSessionUser } from "@/lib/auth";
-import { createProfile, deleteProfile, updateProfile } from "@/lib/profiles";
+import {
+  createProfile,
+  deleteProfile,
+  reorderProfiles,
+  updateProfile,
+} from "@/lib/profiles";
 
 type ActionState = {
   message: string;
@@ -132,6 +137,40 @@ export async function deleteProfileAction(_: ActionState, formData: FormData) {
   } catch {
     return {
       message: "Unable to delete profile.",
+    };
+  }
+}
+
+export async function reorderProfilesAction(profileIds: string[]) {
+  const user = await getSessionUser();
+
+  if (!user || user.role !== "admin") {
+    return {
+      message: "Only administrators can reorder profiles.",
+    };
+  }
+
+  if (!Array.isArray(profileIds) || profileIds.length === 0) {
+    return {
+      message: "No profiles to reorder.",
+    };
+  }
+
+  try {
+    await reorderProfiles(profileIds);
+
+    revalidateTag("profiles");
+    revalidateTag("profile-assignments");
+    revalidatePath("/profiles");
+    revalidatePath("/job-application");
+    revalidatePath("/admin");
+
+    return {
+      message: "Profile order updated.",
+    };
+  } catch {
+    return {
+      message: "Unable to reorder profiles.",
     };
   }
 }

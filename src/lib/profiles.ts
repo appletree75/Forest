@@ -12,7 +12,7 @@ export async function getProfiles(): Promise<PersonalProfile[]> {
   await ensureDatabaseConnected();
 
   const profiles = await prisma.profile.findMany({
-    orderBy: { fullName: "asc" },
+    orderBy: [{ sortOrder: "asc" }, { fullName: "asc" }],
   });
 
   return profiles.map((profile) => ({
@@ -116,9 +116,15 @@ export async function createProfile(
 ) {
   await ensureDatabaseConnected();
 
+  const lastProfile = await prisma.profile.findFirst({
+    orderBy: { sortOrder: "desc" },
+    select: { sortOrder: true },
+  });
+
   const created = await prisma.profile.create({
     data: {
       id: profile.id?.trim() || randomUUID(),
+      sortOrder: (lastProfile?.sortOrder ?? 0) + 1,
       fullName: profile.fullName.trim(),
       email: profile.email.trim(),
       dob: profile.dob.trim(),
@@ -144,4 +150,19 @@ export async function deleteProfile(profileId: string) {
   await prisma.profile.delete({
     where: { id: profileId },
   });
+}
+
+export async function reorderProfiles(profileIds: string[]) {
+  await ensureDatabaseConnected();
+
+  await prisma.$transaction(
+    profileIds.map((profileId, index) =>
+      prisma.profile.update({
+        where: { id: profileId },
+        data: {
+          sortOrder: index + 1,
+        },
+      }),
+    ),
+  );
 }
