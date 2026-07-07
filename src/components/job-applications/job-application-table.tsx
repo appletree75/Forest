@@ -114,6 +114,7 @@ export function JobApplicationTable({
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<JobApplicationSearchResult[]>([]);
   const [searchState, setSearchState] = useState<"idle" | "loading" | "error">("idle");
+  const [copiedSearchResultKey, setCopiedSearchResultKey] = useState("");
   const [tablesByProfile, setTablesByProfile] =
     useState<JobApplicationTables>(initialTables);
   const filteredProfiles = getFilteredProfiles(
@@ -655,6 +656,20 @@ export function JobApplicationTable({
     }, 1500);
   };
 
+  const copySearchResultUrl = async (url: string, resultKey: string) => {
+    if (!url) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(url);
+    setCopiedSearchResultKey(resultKey);
+    window.setTimeout(() => {
+      setCopiedSearchResultKey((current) =>
+        current === resultKey ? "" : current,
+      );
+    }, 1500);
+  };
+
   const copyProfileField = async (value: string, fieldKey: string) => {
     if (!value.trim()) {
       return;
@@ -836,40 +851,36 @@ export function JobApplicationTable({
         <div className="mb-6 rounded-[22px] border border-[var(--border)] bg-white p-4">
           <div className="grid gap-3 lg:grid-cols-[minmax(0,360px)_1fr] lg:items-start">
             <div className="grid gap-2">
-              <label
-                htmlFor="application-search"
-                className="text-sm font-medium text-[color:var(--muted)]"
-              >
-                Search Selected Profile Across All Dates
-              </label>
               <input
                 id="application-search"
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Search URL, company, stack, description, status, date..."
+                placeholder="Search"
                 className="h-10 w-full rounded-xl border border-[var(--border)] bg-[color:var(--background)] px-3 text-sm outline-none"
               />
-              <div className="text-xs text-[color:var(--muted)]">
-                {searchState === "loading"
-                  ? "Searching..."
-                  : searchState === "error"
-                    ? "Search failed."
-                    : searchQuery.trim()
-                      ? `${searchResults.length} result${searchResults.length === 1 ? "" : "s"}`
-                      : "Enter a keyword to search all saved dates for this profile."}
-              </div>
+              {searchQuery.trim() && (
+                <div className="text-xs text-[color:var(--muted)]">
+                  {searchState === "loading"
+                    ? "Searching..."
+                    : searchState === "error"
+                      ? "Search failed."
+                      : `${searchResults.length} result${searchResults.length === 1 ? "" : "s"}`}
+                </div>
+              )}
             </div>
 
             <div className="min-w-0">
               {searchQuery.trim() ? (
                 searchResults.length > 0 ? (
                   <div className="grid max-h-52 gap-2 overflow-y-auto pr-1">
-                    {searchResults.map((result) => (
-                      <button
-                        key={`${result.dayKey}:${result.rowId}:${result.url}`}
-                        type="button"
-                        onClick={() => setSelectedDayKey(result.dayKey)}
-                        className="grid gap-1 rounded-xl border border-[var(--border)] bg-[color:var(--background)] px-3 py-2 text-left hover:border-[color:var(--accent)]"
+                    {searchResults.map((result) => {
+                      const resultKey = `${result.dayKey}:${result.rowId}:${result.url}`;
+                      const isCopied = copiedSearchResultKey === resultKey;
+
+                      return (
+                      <div
+                        key={resultKey}
+                        className="grid gap-2 rounded-xl border border-[var(--border)] bg-[color:var(--background)] px-3 py-2"
                       >
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">
                           <span>{result.dayKey}</span>
@@ -877,14 +888,65 @@ export function JobApplicationTable({
                           <span>{result.platform}</span>
                           {result.status ? <span>{result.status}</span> : null}
                         </div>
-                        <div className="truncate text-sm font-semibold text-[color:var(--foreground)]">
-                          {result.company || result.url || "(Empty row)"}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedDayKey(result.dayKey)}
+                          className="grid gap-1 text-left hover:text-[color:var(--accent)]"
+                        >
+                          <div className="truncate text-sm font-semibold text-[color:var(--foreground)]">
+                            {result.company || result.url || "(Empty row)"}
+                          </div>
+                          <div className="truncate text-xs text-[color:var(--muted)]">
+                            {result.stack || result.description || "-"}
+                          </div>
+                        </button>
+                        <div className="grid grid-cols-[minmax(0,1fr)_36px] items-center gap-2">
+                          <div className="truncate text-xs text-[color:var(--muted)]">
+                            {result.url || "-"}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void copySearchResultUrl(result.url, resultKey)}
+                            disabled={!result.url}
+                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border)] bg-white text-[color:var(--foreground)] disabled:cursor-not-allowed disabled:text-slate-300"
+                            aria-label="Copy URL"
+                            title="Copy URL"
+                          >
+                            {isCopied ? (
+                              <svg
+                                width="14"
+                                height="14"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="#16a34a"
+                                strokeWidth="3"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden="true"
+                              >
+                                <path d="M20 6 9 17l-5-5" />
+                              </svg>
+                            ) : (
+                              <svg
+                                width="14"
+                                height="14"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden="true"
+                              >
+                                <rect x="9" y="9" width="13" height="13" />
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                              </svg>
+                            )}
+                          </button>
                         </div>
-                        <div className="truncate text-xs text-[color:var(--muted)]">
-                          {result.url || result.stack || result.description || "-"}
-                        </div>
-                      </button>
-                    ))}
+                      </div>
+                    );
+                    })}
                   </div>
                 ) : searchState === "loading" ? null : (
                   <div className="rounded-xl border border-dashed border-[var(--border)] bg-[color:var(--background)] px-4 py-3 text-sm text-[color:var(--muted)]">
