@@ -848,9 +848,9 @@ export function JobApplicationTable({
       </div>
 
       {isAdmin ? (
-        <div className="mb-6 rounded-[22px] border border-[var(--border)] bg-white p-4">
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,360px)_1fr] lg:items-start">
-            <div className="grid gap-2">
+        <div className="mb-4 rounded-[22px] border border-[var(--border)] bg-white px-4 py-3">
+          <div className="grid gap-2 lg:grid-cols-[minmax(0,360px)_1fr] lg:items-start">
+            <div className="grid gap-1">
               <input
                 id="application-search"
                 value={searchQuery}

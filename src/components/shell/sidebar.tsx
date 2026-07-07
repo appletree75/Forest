@@ -44,8 +44,8 @@ export function Sidebar({ user, permissions }: SidebarProps) {
   const topItems = visibleItems.filter((item) => item.section !== "bottom");
   const bottomItems = visibleItems.filter((item) => item.section === "bottom");
   const labelStateClass = isCollapsed
-    ? "max-w-0 opacity-0"
-    : "ml-3 max-w-[190px] opacity-100";
+    ? "translate-x-2 opacity-0"
+    : "translate-x-0 opacity-100";
 
   return (
     <aside
@@ -86,9 +86,7 @@ export function Sidebar({ user, permissions }: SidebarProps) {
       </div>
       <nav className="flex min-h-0 flex-1 flex-col justify-between gap-6 overflow-hidden">
         <div
-          className={`space-y-2 overflow-hidden ${
-            isCollapsed ? "px-0" : "px-3"
-          }`}
+        className="space-y-2 overflow-hidden px-3"
         >
           {topItems.map((item) => {
             const active = activeHref === item.href;
@@ -98,19 +96,15 @@ export function Sidebar({ user, permissions }: SidebarProps) {
                 key={item.href}
                 href={item.href}
                 onClick={() => setPendingHref(item.href)}
-                className={`group flex items-center overflow-hidden rounded-2xl text-sm font-medium transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                className={`relative flex h-14 w-full items-center overflow-hidden rounded-2xl px-3 text-sm font-medium transition-[background-color,color] duration-200 ${
                   active
                     ? "bg-[color:var(--accent)] text-white"
                     : "text-[color:var(--foreground)] hover:bg-[color:var(--accent-soft)]"
-                } ${
-                  isCollapsed
-                    ? "mx-auto h-14 w-14 justify-center px-0"
-                    : "h-14 w-full px-3"
-                }`}
+                } ${isCollapsed ? "justify-center" : ""}`}
                 title={item.label}
               >
                 <span
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition-colors duration-300 ${
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition-colors duration-200 ${
                     active
                       ? "border-white/15 bg-white/10 text-white"
                       : "border-current/10 bg-white/10"
@@ -119,9 +113,10 @@ export function Sidebar({ user, permissions }: SidebarProps) {
                   <SidebarIcon icon={item.shortLabel} />
                 </span>
                 <span
-                  className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${labelStateClass} ${
+                  className={`pointer-events-none absolute left-[60px] right-3 overflow-hidden whitespace-nowrap transition-all duration-200 ease-out ${labelStateClass} ${
                     active ? "text-white" : ""
                   }`}
+                  aria-hidden={isCollapsed}
                 >
                   {item.label}
                 </span>
@@ -131,9 +126,7 @@ export function Sidebar({ user, permissions }: SidebarProps) {
         </div>
 
         <div
-          className={`space-y-2 pt-2 ${
-            isCollapsed ? "px-0" : "px-3"
-          }`}
+          className="space-y-2 px-3 pt-2"
         >
           {bottomItems.map((item) => {
             const active = activeHref === item.href;
@@ -144,19 +137,15 @@ export function Sidebar({ user, permissions }: SidebarProps) {
                 key={item.href}
                 href={item.href}
                 onClick={() => setPendingHref(item.href)}
-                className={`group flex items-center overflow-hidden rounded-2xl text-sm font-medium transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                className={`relative flex h-14 w-full items-center overflow-hidden rounded-2xl px-3 text-sm font-medium transition-[background-color,color] duration-200 ${
                   active
                     ? "bg-[color:var(--accent)] text-white"
                     : "text-[color:var(--foreground)] hover:bg-[color:var(--accent-soft)]"
-                } ${
-                  isCollapsed
-                    ? "mx-auto h-14 w-14 justify-center px-0"
-                    : "h-14 w-full px-3"
-                }`}
+                } ${isCollapsed ? "justify-center" : ""}`}
                 title={label}
               >
                 <span
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition-colors duration-300 ${
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition-colors duration-200 ${
                     active
                       ? "border-white/15 bg-white/10 text-white"
                       : "border-current/10 bg-white/10"
@@ -165,9 +154,10 @@ export function Sidebar({ user, permissions }: SidebarProps) {
                   <SidebarIcon icon={item.shortLabel} />
                 </span>
                 <span
-                  className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${labelStateClass} ${
+                  className={`pointer-events-none absolute left-[60px] right-3 overflow-hidden whitespace-nowrap transition-all duration-200 ease-out ${labelStateClass} ${
                     active ? "text-white" : ""
                   }`}
+                  aria-hidden={isCollapsed}
                 >
                   {label}
                 </span>
