@@ -13,7 +13,7 @@ async function mapSession(session: {
   osInfo: string | null;
   createdAt: Date;
   expiresAt: Date;
-}): ManagedSession {
+}): Promise<ManagedSession> {
   const ipAddress = session.ipAddress ?? "";
 
   return {
