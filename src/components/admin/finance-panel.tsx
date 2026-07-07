@@ -49,9 +49,6 @@ export function FinancePanel({ transactions, recipients }: FinancePanelProps) {
       <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h2 className="text-lg font-semibold">Finance</h2>
-          <p className="mt-1 text-xs text-[color:var(--muted)]">
-            Protected transactions and payout records.
-          </p>
         </div>
         {isUnlocked ? (
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
@@ -65,9 +62,11 @@ export function FinancePanel({ transactions, recipients }: FinancePanelProps) {
                 setIsModalOpen(false);
                 setIsPasswordModalOpen(false);
               }}
-              className="flex h-10 min-w-[120px] items-center justify-center whitespace-nowrap rounded-xl border border-amber-200 bg-amber-50 px-4 text-sm font-semibold text-amber-800"
+              className="flex h-10 w-10 items-center justify-center rounded-xl border border-amber-200 bg-amber-50 text-amber-800"
+              aria-label="Lock finance panel"
+              title="Lock"
             >
-              Lock
+              <LockIcon />
             </button>
             <button
               type="button"
@@ -85,14 +84,22 @@ export function FinancePanel({ transactions, recipients }: FinancePanelProps) {
             </button>
           </div>
         ) : (
-          <div className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">
-            Locked
-          </div>
+          <button
+            type="submit"
+            form="finance-unlock-form"
+            disabled={isPending}
+            className="flex h-10 w-10 items-center justify-center rounded-xl bg-[color:var(--accent)] text-white disabled:opacity-60"
+            aria-label="Unlock finance panel"
+            title="Unlock"
+          >
+            <UnlockIcon />
+          </button>
         )}
       </div>
 
       {!isUnlocked ? (
         <form
+          id="finance-unlock-form"
           className="rounded-[20px] border border-[var(--border)] bg-white p-4"
           onSubmit={(event) => {
             event.preventDefault();
@@ -113,23 +120,13 @@ export function FinancePanel({ transactions, recipients }: FinancePanelProps) {
           <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[color:var(--muted)]">
             Finance Access
           </div>
-          <p className="mt-2 text-sm text-[color:var(--muted)]">
-            Enter the finance password to view transactions and add new ones.
-          </p>
           <div className="mt-4 flex flex-col gap-3 sm:flex-row">
             <input
               type="password"
               name="password"
-              placeholder="Finance password"
+              placeholder="Password"
               className="h-10 flex-1 rounded-xl border border-[var(--border)] bg-[color:var(--background)] px-3 text-sm outline-none"
             />
-            <button
-              type="submit"
-              disabled={isPending}
-              className="h-10 rounded-xl bg-[color:var(--accent)] px-4 text-sm font-semibold text-white disabled:opacity-60"
-            >
-              {isPending ? "Unlocking..." : "Unlock"}
-            </button>
           </div>
           {unlockMessage ? (
             <div
@@ -515,6 +512,42 @@ function TrashIcon() {
       <path d="M6.5 7l.8 11.1c0 .9.7 1.4 1.6 1.4h6.2c.9 0 1.6-.5 1.6-1.4L17.5 7" />
       <path d="M10 11v5" />
       <path d="M14 11v5" />
+    </svg>
+  );
+}
+
+function LockIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="4" y="11" width="16" height="9" rx="2" />
+      <path d="M8 11V8a4 4 0 1 1 8 0v3" />
+    </svg>
+  );
+}
+
+function UnlockIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="4" y="11" width="16" height="9" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 7.2-2.4" />
     </svg>
   );
 }

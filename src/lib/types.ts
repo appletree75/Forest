@@ -31,6 +31,7 @@ export type ManagedUser = SessionUser & {
 export type ManagedSession = {
   id: string;
   ipAddress: string;
+  locationName: string;
   deviceInfo: string;
   createdAt: string;
   expiresAt: string;

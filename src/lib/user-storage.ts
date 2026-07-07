@@ -4,18 +4,22 @@ import { Role as PrismaRole } from "@prisma/client";
 import { ensureDatabaseConnected } from "@/lib/database";
 import { hashPassword } from "@/lib/passwords";
 import { prisma } from "@/lib/prisma";
+import { resolveSessionLocationName } from "@/lib/session-location";
 import type { ManagedSession, ManagedUser, Role } from "@/lib/types";
 
-function mapSession(session: {
+async function mapSession(session: {
   id: string;
   ipAddress: string | null;
   osInfo: string | null;
   createdAt: Date;
   expiresAt: Date;
 }): ManagedSession {
+  const ipAddress = session.ipAddress ?? "";
+
   return {
     id: session.id,
-    ipAddress: session.ipAddress ?? "",
+    ipAddress,
+    locationName: await resolveSessionLocationName(ipAddress),
     deviceInfo: session.osInfo ?? "",
     createdAt: session.createdAt.toISOString(),
     expiresAt: session.expiresAt.toISOString(),
@@ -35,17 +39,19 @@ const getCachedUsers = unstable_cache(
     orderBy: [{ role: "asc" }, { name: "asc" }],
   });
 
-  return users.map((user) => ({
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    password: "",
-    sessions: user.sessions.map(mapSession),
-    bidderAppliedRate: user.bidderAppliedRate,
-    bidderFailedRate: user.bidderFailedRate,
-    callerHourlyRate: user.callerHourlyRate,
-  }));
+  return Promise.all(
+    users.map(async (user) => ({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      password: "",
+      sessions: await Promise.all(user.sessions.map(mapSession)),
+      bidderAppliedRate: user.bidderAppliedRate,
+      bidderFailedRate: user.bidderFailedRate,
+      callerHourlyRate: user.callerHourlyRate,
+    })),
+  );
   },
   ["users"],
   { tags: ["users"] },

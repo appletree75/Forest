@@ -15,6 +15,13 @@ type SidebarProps = {
 export function Sidebar({ user, permissions }: SidebarProps) {
   const pathname = usePathname();
   const [pendingHref, setPendingHref] = useState("");
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+
+    return window.localStorage.getItem("forest_sidebar_collapsed") === "true";
+  });
 
   useEffect(() => {
     if (pendingHref !== pathname) {
@@ -38,7 +45,40 @@ export function Sidebar({ user, permissions }: SidebarProps) {
   const bottomItems = visibleItems.filter((item) => item.section === "bottom");
 
   return (
-    <aside className="sticky top-0 flex h-screen w-72 shrink-0 flex-col border-r border-[var(--border)] bg-[color:var(--panel)]/90 px-3 py-4 backdrop-blur">
+    <aside
+      className={`sticky top-0 flex h-screen shrink-0 flex-col border-r border-[var(--border)] bg-[color:var(--panel)]/90 px-3 py-4 backdrop-blur transition-[width] duration-200 ${
+        isCollapsed ? "w-[88px]" : "w-72"
+      }`}
+    >
+      <div className="mb-4 flex justify-end">
+        <button
+          type="button"
+          onClick={() => {
+            const nextValue = !isCollapsed;
+            setIsCollapsed(nextValue);
+            window.localStorage.setItem(
+              "forest_sidebar_collapsed",
+              String(nextValue),
+            );
+          }}
+          className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border)] bg-white text-[color:var(--muted)] transition-colors hover:bg-[color:var(--accent-soft)]"
+          aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            className={`h-4 w-4 transition-transform ${isCollapsed ? "rotate-180" : ""}`}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="m15 18-6-6 6-6" />
+          </svg>
+        </button>
+      </div>
       <nav className="flex min-h-0 flex-1 flex-col justify-between gap-6">
         <div className="space-y-2 overflow-y-auto pr-1">
           {topItems.map((item) => {
@@ -49,11 +89,12 @@ export function Sidebar({ user, permissions }: SidebarProps) {
                 key={item.href}
                 href={item.href}
                 onClick={() => setPendingHref(item.href)}
-                className={`flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-medium transition-colors ${
+                className={`flex items-center rounded-2xl px-3 py-3 text-sm font-medium transition-colors ${
                   active
                     ? "bg-[color:var(--accent)] text-white"
                     : "text-[color:var(--foreground)] hover:bg-[color:var(--accent-soft)]"
-                }`}
+                } ${isCollapsed ? "justify-center" : "gap-3"}`}
+                title={item.label}
               >
                 <span
                   className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${
@@ -64,7 +105,9 @@ export function Sidebar({ user, permissions }: SidebarProps) {
                 >
                   <SidebarIcon icon={item.shortLabel} />
                 </span>
-                <span className={active ? "text-white" : ""}>{item.label}</span>
+                {!isCollapsed ? (
+                  <span className={active ? "text-white" : ""}>{item.label}</span>
+                ) : null}
               </Link>
             );
           })}
@@ -80,11 +123,12 @@ export function Sidebar({ user, permissions }: SidebarProps) {
                 key={item.href}
                 href={item.href}
                 onClick={() => setPendingHref(item.href)}
-                className={`flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-medium transition-colors ${
+                className={`flex items-center rounded-2xl px-3 py-3 text-sm font-medium transition-colors ${
                   active
                     ? "bg-[color:var(--accent)] text-white"
                     : "text-[color:var(--foreground)] hover:bg-[color:var(--accent-soft)]"
-                }`}
+                } ${isCollapsed ? "justify-center" : "gap-3"}`}
+                title={label}
               >
                 <span
                   className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${
@@ -95,7 +139,9 @@ export function Sidebar({ user, permissions }: SidebarProps) {
                 >
                   <SidebarIcon icon={item.shortLabel} />
                 </span>
-                <span className={active ? "text-white" : ""}>{label}</span>
+                {!isCollapsed ? (
+                  <span className={active ? "text-white" : ""}>{label}</span>
+                ) : null}
               </Link>
             );
           })}

@@ -3,6 +3,7 @@ import { revalidateTag, unstable_cache } from "next/cache";
 
 import { ensureDatabaseConnected } from "@/lib/database";
 import { prisma } from "@/lib/prisma";
+import { resolveSessionLocationName } from "@/lib/session-location";
 
 export type AuditLogEntry = {
   id: string;
@@ -14,6 +15,7 @@ export type AuditLogEntry = {
   targetLabel: string;
   metadata: string;
   ipAddress: string;
+  locationName: string;
   createdAt: string;
 };
 
@@ -37,18 +39,25 @@ const getCachedRecentAuditLogs = unstable_cache(
       take: 40,
     });
 
-    return rows.map((row) => ({
-      id: row.id,
-      actorUserId: row.actorUserId ?? "",
-      actorEmail: row.actorEmail ?? "",
-      action: row.action,
-      targetType: row.targetType,
-      targetId: row.targetId ?? "",
-      targetLabel: row.targetLabel ?? "",
-      metadata: row.metadata ? JSON.stringify(row.metadata) : "",
-      ipAddress: row.ipAddress ?? "",
-      createdAt: row.createdAt.toISOString(),
-    }));
+    return Promise.all(
+      rows.map(async (row) => {
+        const ipAddress = row.ipAddress ?? "";
+
+        return {
+          id: row.id,
+          actorUserId: row.actorUserId ?? "",
+          actorEmail: row.actorEmail ?? "",
+          action: row.action,
+          targetType: row.targetType,
+          targetId: row.targetId ?? "",
+          targetLabel: row.targetLabel ?? "",
+          metadata: row.metadata ? JSON.stringify(row.metadata) : "",
+          ipAddress,
+          locationName: await resolveSessionLocationName(ipAddress),
+          createdAt: row.createdAt.toISOString(),
+        };
+      }),
+    );
   },
   ["audit-log-recent"],
   { tags: ["audit-log"] },

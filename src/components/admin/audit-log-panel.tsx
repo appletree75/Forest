@@ -43,9 +43,6 @@ export function AuditLogPanel({ entries }: AuditLogPanelProps) {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold">Audit Log</h2>
-          <p className="mt-1 text-xs text-[color:var(--muted)]">
-            Recent authentication and admin changes.
-          </p>
         </div>
         <button
           type="button"
@@ -118,7 +115,7 @@ export function AuditLogPanel({ entries }: AuditLogPanelProps) {
               No audit entries match the current filter.
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="max-h-[560px] space-y-3 overflow-y-auto pr-1">
               {filteredEntries.map((entry) => (
                 <div
                   key={entry.id}
@@ -138,7 +135,8 @@ export function AuditLogPanel({ entries }: AuditLogPanelProps) {
                   {entry.targetLabel || entry.ipAddress ? (
                     <div className="mt-3 text-sm text-[color:var(--muted)]">
                       {entry.targetLabel ? `Target: ${entry.targetLabel}` : ""}
-                      {entry.targetLabel && entry.ipAddress ? " - " : ""}
+                      {entry.targetLabel && (entry.locationName || entry.ipAddress) ? " - " : ""}
+                      {entry.locationName ? `Location ${entry.locationName} · ` : ""}
                       {entry.ipAddress ? `IP ${entry.ipAddress}` : ""}
                     </div>
                   ) : null}

@@ -45,9 +45,6 @@ export function UserManagementForm({ users }: UserManagementFormProps) {
         <div className="mt-3 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <h2 className="text-xl font-semibold">User Management</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-5 text-white/78">
-              Create, edit, delete, and assign roles for application users.
-            </p>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {roleCounts.map(({ role, count }) => (
@@ -72,9 +69,6 @@ export function UserManagementForm({ users }: UserManagementFormProps) {
               <div className="text-xs font-semibold uppercase tracking-[0.22em] text-[color:var(--muted)]">
                 Create User
               </div>
-              <p className="mt-1 text-sm text-[color:var(--muted)]">
-                Add a new account and assign the initial role.
-              </p>
             </div>
             <button
               type="button"
@@ -501,6 +495,7 @@ function UserRow({ user }: { user: ManagedUser }) {
                     Started {formatSessionDate(session.createdAt)} · Expires {formatSessionDate(session.expiresAt)}
                   </div>
                   <div className="mt-1 text-xs text-[color:var(--muted)]">
+                    {session.locationName ? `Location ${session.locationName} · ` : ""}
                     IP {session.ipAddress || "Unavailable"} · Device {session.deviceInfo || "Unavailable"}
                   </div>
                 </div>
