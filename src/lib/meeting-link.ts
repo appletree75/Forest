@@ -1,11 +1,13 @@
 const MEETING_HOST_PATTERN =
-  /(?:^|\.)(teams\.microsoft\.com|meet\.google\.com|zoom\.us|webex\.com|whereby\.com|gotomeeting\.com)$/i;
+  /(?:^|\.)(teams\.microsoft\.com|meet\.google\.com|zoom\.us|webex\.com|whereby\.com|gotomeeting\.com|breezy\.hr|hireflix\.com|willo\.video)$/i;
 
 const URL_PATTERN = /https?:\/\/[^\s<>"')]+/gi;
 const HTML_HREF_PATTERN = /href=["']([^"']+)["']/gi;
+const MEETING_CONTEXT_PATTERN =
+  /\b(video call|meeting link|join (?:meeting|call)|interview link|conference link|call link|meeting url)\b/i;
 
 export function extractMeetingLinkFromText(...chunks: Array<string | null | undefined>) {
-  const candidates = new Set<string>();
+  const candidates = new Map<string, string>();
 
   for (const chunk of chunks) {
     const normalized = normalizeInvitationText(chunk);
@@ -18,21 +20,28 @@ export function extractMeetingLinkFromText(...chunks: Array<string | null | unde
       const candidate = sanitizeUrl(match[1]);
 
       if (candidate) {
-        candidates.add(candidate);
+        candidates.set(candidate, normalized);
       }
     }
 
     for (const match of normalized.matchAll(URL_PATTERN)) {
       const candidate = sanitizeUrl(match[0]);
+      const context = getUrlContext(normalized, match.index ?? 0);
 
       if (candidate) {
-        candidates.add(candidate);
+        candidates.set(candidate, context);
       }
     }
   }
 
-  for (const candidate of candidates) {
+  for (const candidate of candidates.keys()) {
     if (isMeetingLink(candidate)) {
+      return candidate;
+    }
+  }
+
+  for (const [candidate, context] of candidates.entries()) {
+    if (MEETING_CONTEXT_PATTERN.test(context)) {
       return candidate;
     }
   }
@@ -79,4 +88,13 @@ function normalizeInvitationText(value: string | null | undefined) {
     .replace(/&gt;/gi, ">")
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'");
+}
+
+function getUrlContext(source: string, matchIndex: number) {
+  const lineStart = source.lastIndexOf("\n", Math.max(matchIndex - 1, 0));
+  const lineEnd = source.indexOf("\n", matchIndex);
+
+  return source
+    .slice(lineStart === -1 ? 0 : lineStart + 1, lineEnd === -1 ? source.length : lineEnd)
+    .trim();
 }
