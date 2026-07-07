@@ -894,7 +894,7 @@ export function JobApplicationTable({
                           className="grid gap-1 text-left hover:text-[color:var(--accent)]"
                         >
                           <div className="truncate text-sm font-semibold text-[color:var(--foreground)]">
-                            {result.company || result.url || "(Empty row)"}
+                            {getSearchResultTitle(result)}
                           </div>
                           <div className="truncate text-xs text-[color:var(--muted)]">
                             {result.stack || result.description || "-"}
@@ -1608,6 +1608,55 @@ function getActiveProfileId(selectedProfileId: string, profiles: PersonalProfile
   }
 
   return profiles[0]?.id ?? "";
+}
+
+function getSearchResultTitle(result: JobApplicationSearchResult) {
+  const company = result.company.trim();
+
+  if (company) {
+    return company;
+  }
+
+  const derivedCompany = deriveCompanyNameFromUrl(result.url);
+
+  return derivedCompany || "(Empty row)";
+}
+
+function deriveCompanyNameFromUrl(value: string) {
+  const trimmedValue = value.trim();
+
+  if (!trimmedValue) {
+    return "";
+  }
+
+  try {
+    const normalizedUrl = /^https?:\/\//i.test(trimmedValue)
+      ? trimmedValue
+      : `https://${trimmedValue}`;
+    const hostname = new URL(normalizedUrl).hostname.replace(/^www\./i, "");
+    const parts = hostname.split(".");
+
+    if (parts.length >= 2) {
+      const core =
+        parts.length >= 3 && parts[parts.length - 2].length <= 3
+          ? parts[parts.length - 3]
+          : parts[parts.length - 2];
+
+      return formatCompanySlug(core);
+    }
+
+    return formatCompanySlug(parts[0] ?? "");
+  } catch {
+    return "";
+  }
+}
+
+function formatCompanySlug(value: string) {
+  return value
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 function applyCopiedColumns(
