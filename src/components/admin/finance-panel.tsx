@@ -57,15 +57,29 @@ export function FinancePanel({ transactions, recipients }: FinancePanelProps) {
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
             <button
               type="button"
+              onClick={() => {
+                setIsUnlocked(false);
+                setMessage("");
+                setUnlockMessage("");
+                setPasswordMessage("");
+                setIsModalOpen(false);
+                setIsPasswordModalOpen(false);
+              }}
+              className="flex h-10 min-w-[120px] items-center justify-center whitespace-nowrap rounded-xl border border-amber-200 bg-amber-50 px-4 text-sm font-semibold text-amber-800"
+            >
+              Lock
+            </button>
+            <button
+              type="button"
               onClick={() => setIsPasswordModalOpen(true)}
-              className="h-10 rounded-xl border border-[var(--border)] bg-white px-4 text-sm font-semibold sm:min-w-[148px]"
+              className="flex h-10 min-w-[168px] items-center justify-center whitespace-nowrap rounded-xl border border-[var(--border)] bg-white px-4 text-sm font-semibold"
             >
               Reset password
             </button>
             <button
               type="button"
               onClick={() => setIsModalOpen(true)}
-              className="h-10 rounded-xl bg-[color:var(--accent)] px-4 text-sm font-semibold text-white sm:min-w-[148px]"
+              className="flex h-10 min-w-[168px] items-center justify-center whitespace-nowrap rounded-xl bg-[color:var(--accent)] px-4 text-sm font-semibold text-white"
             >
               Add transaction
             </button>
