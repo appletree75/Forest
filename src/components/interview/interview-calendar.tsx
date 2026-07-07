@@ -152,6 +152,7 @@ const emptyImportedDraft = (
   title: event.title,
   start: event.start,
   end: event.end,
+  color: event.color,
   callerUserId: event.callerUserId ?? "",
   meetingLink: event.meetingLink ?? "",
   jdLink: event.jdLink ?? "",
@@ -594,10 +595,13 @@ export function InterviewCalendar({
             isForeignOwner && event.ownerUserId
               ? effectiveSyncedOwnerPreferences[event.ownerUserId]
               : null;
-          const preference = ownerPreference ?? effectiveIcsSourcePreferences[event.sourceId] ?? {
-            visible: true,
-            color: event.color,
-          };
+          const sourcePreference = effectiveIcsSourcePreferences[event.sourceId];
+          const preference = ownerPreference
+            ? ownerPreference
+            : {
+                visible: sourcePreference?.visible ?? true,
+                color: event.color,
+              };
 
           if (!preference.visible) {
             return [];
@@ -778,6 +782,7 @@ export function InterviewCalendar({
                 title: hasLocalTitleOverride ? importedDraft.title : event.title,
                 start: hasLocalScheduleOverride ? importedDraft.start : event.start,
                 end: hasLocalScheduleOverride ? importedDraft.end : event.end,
+                color: importedDraft.color,
                 callerUserId: importedDraft.callerUserId,
                 meetingLink: importedDraft.meetingLink,
                 jdLink: importedDraft.jdLink,
@@ -997,6 +1002,7 @@ export function InterviewCalendar({
               currentImportedEvent ? arg.event.title !== currentImportedEvent.title : false,
             hasLocalScheduleOverride: true,
             callerUserId: currentImportedEvent?.callerUserId ?? "",
+            color: currentImportedEvent?.color ?? "#7c9b7b",
             meetingLink: currentImportedEvent?.meetingLink ?? "",
             jdLink: currentImportedEvent?.jdLink ?? "",
             resumeLink: currentImportedEvent?.resumeLink ?? "",
@@ -2254,6 +2260,41 @@ export function InterviewCalendar({
                   readOnly={isImportedModalReadOnly}
                   className="h-10 w-full rounded-xl border border-[var(--border)] bg-[color:var(--background)] px-3 text-sm outline-none"
                 />
+              </Field>
+              <Field label="Color">
+                <div className="flex gap-3">
+                  <input
+                    type="color"
+                    value={importedDraft.color}
+                    disabled={isImportedModalReadOnly}
+                    onChange={(event) =>
+                      setImportedDraft((current) =>
+                        current
+                          ? {
+                              ...current,
+                              color: event.target.value,
+                            }
+                          : current,
+                      )
+                    }
+                    className="h-10 w-14 rounded-xl border border-[var(--border)] bg-[color:var(--background)] p-1"
+                  />
+                  <input
+                    value={importedDraft.color}
+                    readOnly={isImportedModalReadOnly}
+                    onChange={(event) =>
+                      setImportedDraft((current) =>
+                        current
+                          ? {
+                              ...current,
+                              color: event.target.value,
+                            }
+                          : current,
+                      )
+                    }
+                    className="h-10 flex-1 rounded-xl border border-[var(--border)] bg-[color:var(--background)] px-3 text-sm outline-none"
+                  />
+                </div>
               </Field>
               <Field label="Caller">
                 <select

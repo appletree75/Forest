@@ -56,6 +56,7 @@ export function applyImportedEventOverrides(
       title: override.hasLocalTitleOverride ? override.title : event.title,
       start: override.hasLocalScheduleOverride ? override.start : event.start,
       end: override.hasLocalScheduleOverride ? override.end : event.end,
+      color: override.color || event.color,
       callerUserId: override.callerUserId,
       meetingLink: override.meetingLink,
       jdLink: override.jdLink,

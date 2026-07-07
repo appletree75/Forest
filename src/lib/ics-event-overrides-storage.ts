@@ -18,6 +18,7 @@ function mapOverride(override: {
   title: string;
   start: string;
   end: string;
+  color: string;
   hasLocalTitleOverride: boolean;
   hasLocalScheduleOverride: boolean;
   callerUserId: string | null;
@@ -34,6 +35,7 @@ function mapOverride(override: {
     title: override.title,
     start: override.start,
     end: override.end,
+    color: override.color,
     hasLocalTitleOverride: override.hasLocalTitleOverride,
     hasLocalScheduleOverride: override.hasLocalScheduleOverride,
     callerUserId: override.callerUserId ?? "",
@@ -86,6 +88,7 @@ export async function upsertIcsEventOverride(
       title: override.title,
       start: override.start,
       end: override.end,
+      color: sanitizeColor(override.color),
       hasLocalTitleOverride: Boolean(override.hasLocalTitleOverride),
       hasLocalScheduleOverride: Boolean(override.hasLocalScheduleOverride),
       callerUserId: sanitizeOptionalString(override.callerUserId),
@@ -100,6 +103,7 @@ export async function upsertIcsEventOverride(
       title: override.title,
       start: override.start,
       end: override.end,
+      color: sanitizeColor(override.color),
       hasLocalTitleOverride: Boolean(override.hasLocalTitleOverride),
       hasLocalScheduleOverride: Boolean(override.hasLocalScheduleOverride),
       callerUserId: sanitizeOptionalString(override.callerUserId),
@@ -127,4 +131,9 @@ export async function deleteIcsEventOverride(userId: string, eventId: string) {
 function sanitizeOptionalString(value: unknown) {
   const normalized = String(value ?? "").trim();
   return normalized || null;
+}
+
+function sanitizeColor(value: unknown) {
+  const normalized = String(value ?? "").trim();
+  return /^#[0-9a-f]{6}$/i.test(normalized) ? normalized : "#7c9b7b";
 }
