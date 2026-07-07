@@ -46,7 +46,7 @@ export function FinancePanel({ transactions, recipients }: FinancePanelProps) {
 
   return (
     <div className="rounded-[24px] border border-[var(--border)] bg-[color:var(--panel-strong)] p-4 shadow-[0_12px_36px_rgba(24,34,24,0.05)]">
-      <div className="mb-4 flex items-center justify-between gap-4">
+      <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h2 className="text-lg font-semibold">Finance</h2>
           <p className="mt-1 text-xs text-[color:var(--muted)]">
@@ -54,18 +54,18 @@ export function FinancePanel({ transactions, recipients }: FinancePanelProps) {
           </p>
         </div>
         {isUnlocked ? (
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
             <button
               type="button"
               onClick={() => setIsPasswordModalOpen(true)}
-              className="h-10 rounded-xl border border-[var(--border)] bg-white px-4 text-sm font-semibold"
+              className="h-10 rounded-xl border border-[var(--border)] bg-white px-4 text-sm font-semibold sm:min-w-[148px]"
             >
               Reset password
             </button>
             <button
               type="button"
               onClick={() => setIsModalOpen(true)}
-              className="h-10 rounded-xl bg-[color:var(--accent)] px-4 text-sm font-semibold text-white"
+              className="h-10 rounded-xl bg-[color:var(--accent)] px-4 text-sm font-semibold text-white sm:min-w-[148px]"
             >
               Add transaction
             </button>

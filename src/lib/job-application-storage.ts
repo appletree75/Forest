@@ -273,3 +273,51 @@ export async function getJobApplicationTablesForProfiles(
     ]),
   ) as JobApplicationTables;
 }
+
+export async function searchJobApplicationRows(
+  profileId: string,
+  query: string,
+) {
+  await ensureDatabaseConnected();
+
+  const normalizedQuery = query.trim().toLowerCase();
+
+  if (!normalizedQuery) {
+    return [];
+  }
+
+  const storedRows = await prisma.jobApplicationRow.findMany({
+    where: {
+      profileId,
+    },
+    orderBy: [{ dayKey: "desc" }, { rowId: "asc" }],
+  });
+
+  return storedRows
+    .filter((row) => {
+      const haystacks = [
+        row.dayKey,
+        row.platform,
+        row.company,
+        row.url,
+        row.stack,
+        row.description,
+        row.status ?? "",
+      ];
+
+      return haystacks.some((value) =>
+        String(value).toLowerCase().includes(normalizedQuery),
+      );
+    })
+    .map((row) => ({
+      profileId: row.profileId,
+      dayKey: row.dayKey,
+      rowId: row.rowId,
+      platform: row.platform,
+      company: row.company,
+      url: row.url,
+      stack: row.stack,
+      description: row.description,
+      status: row.status,
+    }));
+}

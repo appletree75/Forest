@@ -14,7 +14,7 @@ import {
   getIcsCalendarSources,
 } from "@/lib/ics-calendar-storage";
 import { getInterviewEvents } from "@/lib/interview-storage";
-import { getUsersBasic } from "@/lib/user-storage";
+import { getUsersBasic, getUsersByRole } from "@/lib/user-storage";
 
 export default async function InterviewPage() {
   const sessionUser = await getSessionUser();
@@ -23,9 +23,12 @@ export default async function InterviewPage() {
   const canViewAllSyncedCalendars =
     canManageAllSyncedCalendars || sessionUser?.role === "caller";
 
-  const [events, users, googleCalendarConnections, icsCalendarSources, icsEventOverrides] = await Promise.all([
+  const [events, users, bidders, callers, googleCalendarConnections, icsCalendarSources, icsEventOverrides] =
+    await Promise.all([
     getInterviewEvents(),
     getUsersBasic(),
+    getUsersByRole("bidder"),
+    getUsersByRole("caller"),
     sessionUser
       ? canViewAllSyncedCalendars
         ? getAllGoogleCalendarConnections()
@@ -41,9 +44,7 @@ export default async function InterviewPage() {
         ? getAllIcsEventOverrides()
         : getIcsEventOverrides(sessionUser.id)
       : Promise.resolve([]),
-  ]);
-  const bidders = users.filter((user) => user.role === "bidder");
-  const callers = users.filter((user) => user.role === "caller");
+    ]);
   const userNameById = new Map(users.map((user) => [user.id, user.name]));
   const normalizedIcsCalendarSources = icsCalendarSources.map((source) => ({
     ...source,

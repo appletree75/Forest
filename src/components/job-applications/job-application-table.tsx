@@ -44,6 +44,18 @@ type CopiedTablePayload = {
   rows: JobApplication[];
 };
 
+type JobApplicationSearchResult = {
+  profileId: string;
+  dayKey: string;
+  rowId: number;
+  platform: Platform;
+  company: string;
+  url: string;
+  stack: string;
+  description: string;
+  status: ApplicationStatus | null;
+};
+
 type JobApplicationTableProps = {
   profiles: PersonalProfile[];
   initialTables: JobApplicationTables;
@@ -99,6 +111,9 @@ export function JobApplicationTable({
   const [customStackOptions, setCustomStackOptions] = useState<string[]>([]);
   const [newStackName, setNewStackName] = useState("");
   const [stackMessage, setStackMessage] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<JobApplicationSearchResult[]>([]);
+  const [searchState, setSearchState] = useState<"idle" | "loading" | "error">("idle");
   const [tablesByProfile, setTablesByProfile] =
     useState<JobApplicationTables>(initialTables);
   const filteredProfiles = getFilteredProfiles(
@@ -135,6 +150,57 @@ export function JobApplicationTable({
   useEffect(() => {
     latestTablesRef.current = tablesByProfile;
   }, [tablesByProfile]);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      return;
+    }
+
+    const normalizedQuery = searchQuery.trim();
+
+    if (!activeProfileId || !normalizedQuery) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(async () => {
+      setSearchState("loading");
+
+      try {
+        const response = await fetch(
+          `/api/job-applications?profileId=${encodeURIComponent(activeProfileId)}&query=${encodeURIComponent(normalizedQuery)}`,
+          {
+            method: "GET",
+            cache: "no-store",
+            signal: controller.signal,
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error("Search failed.");
+        }
+
+        const data = (await response.json()) as {
+          results: JobApplicationSearchResult[];
+        };
+
+        setSearchResults(data.results);
+        setSearchState("idle");
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+
+        setSearchResults([]);
+        setSearchState("error");
+      }
+    }, 250);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeoutId);
+    };
+  }, [activeProfileId, isAdmin, searchQuery]);
 
   useEffect(() => {
     if (!activeProfileId || !selectedDayKey) {
@@ -765,6 +831,71 @@ export function JobApplicationTable({
           </div>
         </div>
       </div>
+
+      {isAdmin ? (
+        <div className="mb-6 rounded-[22px] border border-[var(--border)] bg-white p-4">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,360px)_1fr] lg:items-start">
+            <div className="grid gap-2">
+              <label
+                htmlFor="application-search"
+                className="text-sm font-medium text-[color:var(--muted)]"
+              >
+                Search Selected Profile Across All Dates
+              </label>
+              <input
+                id="application-search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search URL, company, stack, description, status, date..."
+                className="h-10 w-full rounded-xl border border-[var(--border)] bg-[color:var(--background)] px-3 text-sm outline-none"
+              />
+              <div className="text-xs text-[color:var(--muted)]">
+                {searchState === "loading"
+                  ? "Searching..."
+                  : searchState === "error"
+                    ? "Search failed."
+                    : searchQuery.trim()
+                      ? `${searchResults.length} result${searchResults.length === 1 ? "" : "s"}`
+                      : "Enter a keyword to search all saved dates for this profile."}
+              </div>
+            </div>
+
+            <div className="min-w-0">
+              {searchQuery.trim() ? (
+                searchResults.length > 0 ? (
+                  <div className="grid max-h-52 gap-2 overflow-y-auto pr-1">
+                    {searchResults.map((result) => (
+                      <button
+                        key={`${result.dayKey}:${result.rowId}:${result.url}`}
+                        type="button"
+                        onClick={() => setSelectedDayKey(result.dayKey)}
+                        className="grid gap-1 rounded-xl border border-[var(--border)] bg-[color:var(--background)] px-3 py-2 text-left hover:border-[color:var(--accent)]"
+                      >
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">
+                          <span>{result.dayKey}</span>
+                          <span>Row {result.rowId}</span>
+                          <span>{result.platform}</span>
+                          {result.status ? <span>{result.status}</span> : null}
+                        </div>
+                        <div className="truncate text-sm font-semibold text-[color:var(--foreground)]">
+                          {result.company || result.url || "(Empty row)"}
+                        </div>
+                        <div className="truncate text-xs text-[color:var(--muted)]">
+                          {result.url || result.stack || result.description || "-"}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ) : searchState === "loading" ? null : (
+                  <div className="rounded-xl border border-dashed border-[var(--border)] bg-[color:var(--background)] px-4 py-3 text-sm text-[color:var(--muted)]">
+                    No matches found for this profile.
+                  </div>
+                )
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {filteredProfiles.length === 0 ? (
         <div className="border border-[var(--border)] bg-[color:var(--background)] px-4 py-3 text-sm text-[color:var(--muted)]">

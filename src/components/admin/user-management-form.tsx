@@ -209,6 +209,7 @@ function RoleSection({
   users: ManagedUser[];
 }) {
   const [open, setOpen] = useState(false);
+  const roleLabel = `${role.charAt(0).toUpperCase()}${role.slice(1)}s`;
 
   return (
     <section className="overflow-hidden rounded-[22px] border border-[rgba(28,82,54,0.1)] bg-white shadow-[0_8px_24px_rgba(24,34,24,0.04)]">
@@ -219,10 +220,10 @@ function RoleSection({
       >
         <div className="flex items-center gap-3">
           <div className="inline-flex rounded-full border border-[rgba(28,82,54,0.1)] bg-[color:var(--background)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--muted)]">
-            {role}
+            {roleLabel}
           </div>
           <div className="text-sm text-[color:var(--muted)]">
-            {users.length} user{users.length === 1 ? "" : "s"}
+            {users.length} total
           </div>
         </div>
         <span

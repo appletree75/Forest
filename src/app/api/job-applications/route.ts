@@ -4,6 +4,7 @@ import { getSessionUser } from "@/lib/auth";
 import {
   JobApplicationVersionConflictError,
   loadJobApplicationRows,
+  searchJobApplicationRows,
   saveJobApplicationRows,
   saveJobApplicationTables,
 } from "@/lib/job-application-storage";
@@ -21,6 +22,22 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const profileId = searchParams.get("profileId")?.trim() ?? "";
     const dayKey = searchParams.get("dayKey")?.trim() ?? "";
+    const query = searchParams.get("query")?.trim() ?? "";
+
+    if (profileId && query) {
+      if (sessionUser.role !== "admin") {
+        return NextResponse.json({ message: "Forbidden." }, { status: 403 });
+      }
+
+      const visibleProfiles = await getVisibleProfilesForUser(sessionUser);
+
+      if (!visibleProfiles.some((profile) => profile.id === profileId)) {
+        return NextResponse.json({ message: "Forbidden." }, { status: 403 });
+      }
+
+      const results = await searchJobApplicationRows(profileId, query);
+      return NextResponse.json({ profileId, query, results });
+    }
 
     if (!profileId || !dayKey) {
       return NextResponse.json(
