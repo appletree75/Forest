@@ -596,11 +596,16 @@ export function InterviewCalendar({
               ? effectiveSyncedOwnerPreferences[event.ownerUserId]
               : null;
           const sourcePreference = effectiveIcsSourcePreferences[event.sourceId];
+          const displayColor = ownerPreference
+            ? ownerPreference.color
+            : event.hasLocalColorOverride
+              ? event.color
+              : sourcePreference?.color ?? event.color;
           const preference = ownerPreference
             ? ownerPreference
             : {
                 visible: sourcePreference?.visible ?? true,
-                color: event.color,
+                color: displayColor,
               };
 
           if (!preference.visible) {
@@ -619,8 +624,8 @@ export function InterviewCalendar({
               "forest-event-imported",
               canEditImportedEvent ? "" : "forest-event-readonly",
             ],
-            backgroundColor: preference.color,
-            borderColor: preference.color,
+            backgroundColor: displayColor,
+            borderColor: displayColor,
             extendedProps: {
               sourceId: event.sourceId,
               sourceName: event.sourceName,
@@ -629,7 +634,7 @@ export function InterviewCalendar({
               callerName: getUserName(callers, event.callerUserId ?? ""),
               isImported: true,
               canEditImportedEvent,
-              color: preference.color,
+              color: displayColor,
               step: event.step ?? 1,
             },
           }];
@@ -750,6 +755,7 @@ export function InterviewCalendar({
       return;
     }
 
+    const hasLocalColorOverride = importedDraft.color !== originalImportedEvent.color;
     const hasLocalTitleOverride = importedDraft.title !== originalImportedEvent.title;
     const hasLocalScheduleOverride =
       importedDraft.start !== originalImportedEvent.start ||
@@ -765,6 +771,7 @@ export function InterviewCalendar({
         },
         body: JSON.stringify({
           ...importedDraft,
+          hasLocalColorOverride,
           hasLocalTitleOverride,
           hasLocalScheduleOverride,
         }),
@@ -782,7 +789,8 @@ export function InterviewCalendar({
                 title: hasLocalTitleOverride ? importedDraft.title : event.title,
                 start: hasLocalScheduleOverride ? importedDraft.start : event.start,
                 end: hasLocalScheduleOverride ? importedDraft.end : event.end,
-                color: importedDraft.color,
+                color: hasLocalColorOverride ? importedDraft.color : event.color,
+                hasLocalColorOverride,
                 callerUserId: importedDraft.callerUserId,
                 meetingLink: importedDraft.meetingLink,
                 jdLink: importedDraft.jdLink,
@@ -998,11 +1006,12 @@ export function InterviewCalendar({
             title: arg.event.title,
             start: nextStart.toISOString(),
             end: nextEnd.toISOString(),
+            color: currentImportedEvent?.color ?? "#7c9b7b",
+            hasLocalColorOverride: Boolean(currentImportedEvent?.hasLocalColorOverride),
             hasLocalTitleOverride:
               currentImportedEvent ? arg.event.title !== currentImportedEvent.title : false,
             hasLocalScheduleOverride: true,
             callerUserId: currentImportedEvent?.callerUserId ?? "",
-            color: currentImportedEvent?.color ?? "#7c9b7b",
             meetingLink: currentImportedEvent?.meetingLink ?? "",
             jdLink: currentImportedEvent?.jdLink ?? "",
             resumeLink: currentImportedEvent?.resumeLink ?? "",

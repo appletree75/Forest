@@ -172,6 +172,7 @@ model IcsEventOverride {
   start                    String
   end                      String
   color                    String   @default("#7c9b7b")
+  hasLocalColorOverride    Boolean  @default(false)
   hasLocalTitleOverride    Boolean  @default(false)
   hasLocalScheduleOverride Boolean  @default(false)
   callerUserId             String?

@@ -1,0 +1,2 @@
+ALTER TABLE "IcsEventOverride"
+ADD COLUMN IF NOT EXISTS "hasLocalColorOverride" BOOLEAN NOT NULL DEFAULT false;

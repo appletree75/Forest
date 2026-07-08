@@ -16,6 +16,7 @@ export async function PUT(request: Request) {
       start?: string;
       end?: string;
       color?: string;
+      hasLocalColorOverride?: boolean;
       hasLocalTitleOverride?: boolean;
       hasLocalScheduleOverride?: boolean;
       callerUserId?: string;
@@ -40,6 +41,7 @@ export async function PUT(request: Request) {
       start: body.start,
       end: body.end,
       color: String(body.color ?? ""),
+      hasLocalColorOverride: Boolean(body.hasLocalColorOverride),
       hasLocalTitleOverride: Boolean(body.hasLocalTitleOverride),
       hasLocalScheduleOverride: Boolean(body.hasLocalScheduleOverride),
       callerUserId: String(body.callerUserId ?? ""),

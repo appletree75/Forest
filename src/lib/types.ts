@@ -111,6 +111,7 @@ export type ImportedCalendarEvent = {
   end: string;
   allDay: boolean;
   color: string;
+  hasLocalColorOverride?: boolean;
   location?: string;
   description?: string;
   htmlDescription?: string;
@@ -130,6 +131,7 @@ export type ImportedCalendarEventOverride = {
   start: string;
   end: string;
   color: string;
+  hasLocalColorOverride?: boolean;
   hasLocalTitleOverride?: boolean;
   hasLocalScheduleOverride?: boolean;
   callerUserId: string;

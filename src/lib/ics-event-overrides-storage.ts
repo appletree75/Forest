@@ -19,6 +19,7 @@ function mapOverride(override: {
   start: string;
   end: string;
   color: string;
+  hasLocalColorOverride: boolean;
   hasLocalTitleOverride: boolean;
   hasLocalScheduleOverride: boolean;
   callerUserId: string | null;
@@ -36,6 +37,7 @@ function mapOverride(override: {
     start: override.start,
     end: override.end,
     color: override.color,
+    hasLocalColorOverride: override.hasLocalColorOverride,
     hasLocalTitleOverride: override.hasLocalTitleOverride,
     hasLocalScheduleOverride: override.hasLocalScheduleOverride,
     callerUserId: override.callerUserId ?? "",
@@ -89,6 +91,7 @@ export async function upsertIcsEventOverride(
       start: override.start,
       end: override.end,
       color: sanitizeColor(override.color),
+      hasLocalColorOverride: Boolean(override.hasLocalColorOverride),
       hasLocalTitleOverride: Boolean(override.hasLocalTitleOverride),
       hasLocalScheduleOverride: Boolean(override.hasLocalScheduleOverride),
       callerUserId: sanitizeOptionalString(override.callerUserId),
@@ -104,6 +107,7 @@ export async function upsertIcsEventOverride(
       start: override.start,
       end: override.end,
       color: sanitizeColor(override.color),
+      hasLocalColorOverride: Boolean(override.hasLocalColorOverride),
       hasLocalTitleOverride: Boolean(override.hasLocalTitleOverride),
       hasLocalScheduleOverride: Boolean(override.hasLocalScheduleOverride),
       callerUserId: sanitizeOptionalString(override.callerUserId),
