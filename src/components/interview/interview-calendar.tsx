@@ -2475,7 +2475,6 @@ export function InterviewCalendar({
         }
 
         .forest-calendar-shell .fc-event.forest-event-readonly {
-          cursor: not-allowed;
           opacity: 0.9;
         }
 
