@@ -162,6 +162,75 @@ const emptyImportedDraft = (
   notes: event.notes ?? "",
 });
 
+function mergeRefreshedLocalEvents(
+  currentEvents: InterviewEvent[],
+  nextEvents: InterviewEvent[],
+) {
+  if (nextEvents.length === 0 && currentEvents.length > 0) {
+    return currentEvents;
+  }
+
+  return nextEvents;
+}
+
+function mergeRefreshedImportedEvents(
+  currentEvents: ImportedCalendarEvent[],
+  nextEvents: ImportedCalendarEvent[],
+  activeSources: IcsCalendarSource[],
+) {
+  if (currentEvents.length === 0) {
+    return nextEvents;
+  }
+
+  const activeSourceIds = new Set(activeSources.map((source) => source.id));
+  const nextBySource = new Map<string, ImportedCalendarEvent[]>();
+
+  for (const event of nextEvents) {
+    const sourceEvents = nextBySource.get(event.sourceId) ?? [];
+    sourceEvents.push(event);
+    nextBySource.set(event.sourceId, sourceEvents);
+  }
+
+  const currentBySource = new Map<string, ImportedCalendarEvent[]>();
+
+  for (const event of currentEvents) {
+    const sourceEvents = currentBySource.get(event.sourceId) ?? [];
+    sourceEvents.push(event);
+    currentBySource.set(event.sourceId, sourceEvents);
+  }
+
+  const mergedById = new Map<string, ImportedCalendarEvent>();
+
+  for (const sourceId of activeSourceIds) {
+    const nextSourceEvents = nextBySource.get(sourceId);
+    const currentSourceEvents = currentBySource.get(sourceId) ?? [];
+    const sourceEvents =
+      nextSourceEvents && nextSourceEvents.length > 0
+        ? nextSourceEvents
+        : currentSourceEvents;
+
+    for (const event of sourceEvents) {
+      mergedById.set(event.id, event);
+    }
+  }
+
+  return Array.from(mergedById.values()).sort((a, b) => {
+    const startCompare = new Date(a.start).getTime() - new Date(b.start).getTime();
+
+    if (startCompare !== 0) {
+      return startCompare;
+    }
+
+    const endCompare = new Date(a.end).getTime() - new Date(b.end).getTime();
+
+    if (endCompare !== 0) {
+      return endCompare;
+    }
+
+    return a.id.localeCompare(b.id);
+  });
+}
+
 export function InterviewCalendar({
   initialEvents,
   bidders,
@@ -227,7 +296,7 @@ export function InterviewCalendar({
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
-      setEvents(initialEvents);
+      setEvents((current) => mergeRefreshedLocalEvents(current, initialEvents));
     }, 0);
 
     return () => window.clearTimeout(timeoutId);
@@ -235,11 +304,13 @@ export function InterviewCalendar({
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
-      setImportedEvents(importedCalendarEvents);
+      setImportedEvents((current) =>
+        mergeRefreshedImportedEvents(current, importedCalendarEvents, icsCalendarSources),
+      );
     }, 0);
 
     return () => window.clearTimeout(timeoutId);
-  }, [importedCalendarEvents]);
+  }, [icsCalendarSources, importedCalendarEvents]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -990,6 +1061,11 @@ const openImportedEditModal = (
         return;
       }
 
+      if (!window.confirm("Apply this schedule change?")) {
+        arg.revert();
+        return;
+      }
+
       const currentImportedEvent = importedEvents.find(
         (event) => event.id === importedId,
       );
@@ -1060,6 +1136,11 @@ const openImportedEditModal = (
     const nextEnd = arg.event.end;
 
     if (!nextStart || !nextEnd) {
+      arg.revert();
+      return;
+    }
+
+    if (!window.confirm("Apply this schedule change?")) {
       arg.revert();
       return;
     }
