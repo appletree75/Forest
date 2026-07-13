@@ -1,8 +1,8 @@
 {
-  "name": "forest",
+  "name": "nex",
   "version": "1.0.0",
   "private": true,
-  "description": "Forest IT business management app",
+  "description": "Nex IT business management app",
   "scripts": {
     "dev": "node --dns-result-order=ipv4first ./node_modules/next/dist/bin/next dev",
     "build": "node --dns-result-order=ipv4first ./node_modules/next/dist/bin/next build",

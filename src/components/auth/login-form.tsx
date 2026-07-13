@@ -23,7 +23,7 @@ export function LoginForm() {
           id="email"
           name="email"
           type="email"
-          defaultValue="admin@forest.local"
+          defaultValue="admin@nex.local"
           required
           className="h-12 w-full rounded-2xl border border-[var(--border)] bg-white px-4 outline-none transition-colors focus:border-[color:var(--accent)]"
         />

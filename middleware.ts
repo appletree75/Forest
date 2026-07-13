@@ -8,6 +8,7 @@ const protectedPaths = [
   "/job-application",
   "/interview",
   "/chat",
+  "/settings",
   "/profile",
   "/profiles",
   "/admin",
@@ -18,14 +19,15 @@ const routePermissions: Array<{ path: string; permission: PermissionKey }> = [
   { path: "/job-application", permission: "view_job_application" },
   { path: "/interview", permission: "view_interview" },
   { path: "/chat", permission: "view_chat" },
-  { path: "/profile", permission: "view_profile" },
+  { path: "/settings", permission: "view_settings" },
   { path: "/profiles", permission: "view_profiles" },
+  { path: "/profile", permission: "view_profile" },
   { path: "/admin", permission: "view_admin" },
 ];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const rawSession = request.cookies.get("forest_session")?.value;
+  const rawSession = request.cookies.get("nex_session")?.value;
   const hasSession = Boolean(rawSession);
   const session = rawSession ? parseSessionCookie(rawSession) : null;
 
@@ -55,6 +57,7 @@ export function middleware(request: NextRequest) {
     hasSession &&
     routePermission &&
     session?.permissions &&
+    !(session.user?.role === "admin" && routePermission.permission === "view_settings") &&
     !session.permissions.includes(routePermission.permission)
   ) {
     const url = request.nextUrl.clone();
@@ -66,12 +69,26 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/login", "/dashboard/:path*", "/job-application/:path*", "/interview/:path*", "/chat/:path*", "/profile/:path*", "/profiles/:path*", "/admin/:path*"],
+  matcher: [
+    "/",
+    "/login",
+    "/dashboard/:path*",
+    "/job-application/:path*",
+    "/interview/:path*",
+    "/chat/:path*",
+    "/settings/:path*",
+    "/profile/:path*",
+    "/profiles/:path*",
+    "/admin/:path*",
+  ],
 };
 
 function parseSessionCookie(value: string) {
   try {
-    return JSON.parse(value) as { permissions?: PermissionKey[] };
+    return JSON.parse(value) as {
+      permissions?: PermissionKey[];
+      user?: { role?: string };
+    };
   } catch {
     return null;
   }

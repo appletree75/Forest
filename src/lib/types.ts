@@ -7,6 +7,7 @@ export type PermissionKey =
   | "view_chat"
   | "view_profile"
   | "view_profiles"
+  | "view_settings"
   | "view_admin"
   | "manage_permissions"
   | "manage_users";
@@ -180,5 +181,37 @@ export type FinanceTransaction = {
   amount: number;
   date: string;
   note: string;
+  createdAt: string;
+};
+
+export type ApiKeySetting = {
+  id: string;
+  provider: string;
+  name: string;
+  apiKeyMasked: string;
+  isSelected: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type InterviewRoomPresence = {
+  roomKey: string;
+  userId: string;
+  userName: string;
+  userRole: Role;
+  joinedAt: string;
+  lastSeenAt: string;
+};
+
+export type InterviewRoomMessage = {
+  id: string;
+  roomKey: string;
+  eventType: string;
+  eventId: string;
+  channel: "team" | "ai";
+  role: "user" | "assistant" | "system";
+  userId: string;
+  userName: string;
+  content: string;
   createdAt: string;
 };

@@ -32,9 +32,9 @@ import type {
 } from "@/lib/types";
 import { extractMeetingLinkFromText } from "@/lib/meeting-link";
 
-const CALENDAR_SETTINGS_KEY = "forest-interview-calendar-settings";
-const ICS_SOURCE_PREFERENCES_KEY = "forest-interview-ics-source-preferences";
-const SYNCED_OWNER_PREFERENCES_KEY = "forest-interview-synced-owner-preferences";
+const CALENDAR_SETTINGS_KEY = "nex-interview-calendar-settings";
+const ICS_SOURCE_PREFERENCES_KEY = "nex-interview-ics-source-preferences";
+const SYNCED_OWNER_PREFERENCES_KEY = "nex-interview-synced-owner-preferences";
 
 const timezoneOptions = [
   { label: "Local", timeZone: "local" },
@@ -55,19 +55,19 @@ const statusStyles: Record<
 > = {
   Scheduled: {
     badge: "border-amber-200 bg-amber-50 text-amber-800",
-    eventClass: "forest-event-scheduled",
+    eventClass: "nex-event-scheduled",
   },
   Confirmed: {
     badge: "border-sky-200 bg-sky-50 text-sky-800",
-    eventClass: "forest-event-confirmed",
+    eventClass: "nex-event-confirmed",
   },
   Done: {
     badge: "border-emerald-200 bg-emerald-50 text-emerald-800",
-    eventClass: "forest-event-done",
+    eventClass: "nex-event-done",
   },
   Cancelled: {
     badge: "border-rose-200 bg-rose-50 text-rose-800",
-    eventClass: "forest-event-cancelled",
+    eventClass: "nex-event-cancelled",
   },
 };
 
@@ -171,11 +171,8 @@ export function InterviewCalendar({
   icsCalendarSources,
   importedCalendarEvents,
   currentUserId,
-  currentUserRole,
 }: InterviewCalendarProps) {
   const router = useRouter();
-  const canManageAllSyncedCalendars =
-    currentUserRole === "supportor" || currentUserRole === "admin";
   const [isRefreshing, startRefreshTransition] = useTransition();
   const calendarRef = useRef<FullCalendar | null>(null);
   const calendarShellRef = useRef<HTMLDivElement | null>(null);
@@ -421,10 +418,6 @@ export function InterviewCalendar({
     [currentUserId, icsCalendarSources],
   );
   const syncedOwnerGroups = useMemo(() => {
-    if (!canManageAllSyncedCalendars) {
-      return [];
-    }
-
     const groups = new Map<
       string,
       {
@@ -492,7 +485,6 @@ export function InterviewCalendar({
       a.ownerName.localeCompare(b.ownerName),
     );
   }, [
-    canManageAllSyncedCalendars,
     currentUserId,
     events,
     googleCalendarConnections,
@@ -541,9 +533,7 @@ export function InterviewCalendar({
           const canEditLocalEvent =
             !event.ownerUserId || event.ownerUserId === currentUserId;
           const isForeignOwner =
-            canManageAllSyncedCalendars &&
-            Boolean(event.ownerUserId) &&
-            event.ownerUserId !== currentUserId;
+            Boolean(event.ownerUserId) && event.ownerUserId !== currentUserId;
           const ownerPreference =
             isForeignOwner && event.ownerUserId
               ? effectiveSyncedOwnerPreferences[event.ownerUserId]
@@ -567,9 +557,9 @@ export function InterviewCalendar({
             ),
             classNames: [
               displayColor
-                ? "forest-event-local-colored"
+                ? "nex-event-local-colored"
                 : statusStyles[event.status].eventClass,
-              canEditLocalEvent ? "" : "forest-event-readonly",
+              canEditLocalEvent ? "" : "nex-event-readonly",
             ],
             extendedProps: {
               rawEvent: event,
@@ -588,9 +578,7 @@ export function InterviewCalendar({
           const canEditImportedEvent =
             !event.ownerUserId || event.ownerUserId === currentUserId;
           const isForeignOwner =
-            canManageAllSyncedCalendars &&
-            Boolean(event.ownerUserId) &&
-            event.ownerUserId !== currentUserId;
+            Boolean(event.ownerUserId) && event.ownerUserId !== currentUserId;
           const ownerPreference =
             isForeignOwner && event.ownerUserId
               ? effectiveSyncedOwnerPreferences[event.ownerUserId]
@@ -621,8 +609,8 @@ export function InterviewCalendar({
             editable: canEditImportedEvent,
             overlap: false,
             classNames: [
-              "forest-event-imported",
-              canEditImportedEvent ? "" : "forest-event-readonly",
+              "nex-event-imported",
+              canEditImportedEvent ? "" : "nex-event-readonly",
             ],
             backgroundColor: displayColor,
             borderColor: displayColor,
@@ -647,7 +635,6 @@ export function InterviewCalendar({
     },
     [
       bidders,
-      canManageAllSyncedCalendars,
       callers,
       currentUserId,
       events,
@@ -673,12 +660,20 @@ export function InterviewCalendar({
     setModalOpen(true);
   };
 
-  const openImportedEditModal = (
-    event: ImportedCalendarEvent,
-    options?: { readOnly?: boolean },
-  ) => {
-    setOriginalImportedEvent(event);
-    setImportedDraft(emptyImportedDraft(event));
+const openImportedEditModal = (
+  event: ImportedCalendarEvent,
+  options?: { readOnly?: boolean; effectiveColor?: string },
+) => {
+    const modalEvent =
+      options?.effectiveColor && options.effectiveColor !== event.color
+        ? {
+            ...event,
+            color: options.effectiveColor,
+          }
+        : event;
+
+    setOriginalImportedEvent(modalEvent);
+    setImportedDraft(emptyImportedDraft(modalEvent));
     setEditingImportedId(event.id);
     setIsImportedModalReadOnly(Boolean(options?.readOnly));
     setImportedModalOpen(true);
@@ -943,6 +938,10 @@ export function InterviewCalendar({
       if (importedEvent) {
         openImportedEditModal(importedEvent, {
           readOnly: !canEditImportedEvent,
+          effectiveColor:
+            typeof arg.event.extendedProps.color === "string"
+              ? arg.event.extendedProps.color
+              : undefined,
         });
       }
 
@@ -1254,7 +1253,7 @@ export function InterviewCalendar({
   return (
     <>
       <div
-        className={`forest-interview relative xl:grid xl:gap-5 ${
+        className={`nex-interview relative xl:grid xl:gap-5 ${
           isToolsSidebarOpen
             ? "xl:grid-cols-[minmax(0,1fr)_360px]"
             : "xl:grid-cols-[minmax(0,1fr)]"
@@ -1333,7 +1332,7 @@ export function InterviewCalendar({
             <div className="rounded-[28px] border border-[var(--border)] bg-white p-4">
               <div
                 ref={calendarShellRef}
-                className="forest-calendar-shell overflow-visible rounded-[24px] border border-[var(--border)]"
+                className="nex-calendar-shell overflow-visible rounded-[24px] border border-[var(--border)]"
               >
                 <div className={isTimeGridView ? "grid grid-cols-[auto_minmax(0,1fr)]" : ""}>
                   {isTimeGridView ? (
@@ -1528,7 +1527,7 @@ export function InterviewCalendar({
                       </div>
                     </div>
 
-                    {canManageAllSyncedCalendars ? (
+                    {syncedOwnerGroups.length > 0 ? (
                       <div className="rounded-[20px] border border-[var(--border)] bg-white px-4 py-4">
                         <div className="mb-3 flex items-center justify-between gap-3">
                           <div className="text-xs uppercase tracking-[0.22em] text-[color:var(--muted)]">
@@ -1762,21 +1761,38 @@ export function InterviewCalendar({
                 <h3 className="mt-2 text-2xl font-semibold">
                   {editingId
                     ? isLocalModalReadOnly
-                      ? "View in Forest"
+                      ? "View in Nex"
                       : "Update scheduled interview"
                     : "Schedule interview"}
                 </h3>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setModalOpen(false);
-                  setIsLocalModalReadOnly(false);
-                }}
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[color:var(--background)] text-[color:var(--muted)]"
-              >
-                x
-              </button>
+              <div className="flex items-center gap-2">
+                {editingId ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      router.push(
+                        `/interview/room?type=local&id=${encodeURIComponent(editingId)}&title=${encodeURIComponent(draft.title || "Interview room")}`,
+                      )
+                    }
+                    className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[color:var(--background)] text-[color:var(--muted)]"
+                    title="Enter room"
+                    aria-label="Enter room"
+                  >
+                    <RoomIcon />
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalOpen(false);
+                    setIsLocalModalReadOnly(false);
+                  }}
+                  className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[color:var(--background)] text-[color:var(--muted)]"
+                >
+                  x
+                </button>
+              </div>
             </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
@@ -2151,22 +2167,37 @@ export function InterviewCalendar({
                   {isImportedModalReadOnly ? "Event Details" : "Imported Event"}
                 </div>
                 <h3 className="mt-2 text-2xl font-semibold">
-                  {isImportedModalReadOnly ? "View in Forest" : "Edit locally in Forest"}
+                  {isImportedModalReadOnly ? "View in Nex" : "Edit locally in Nex"}
                 </h3>
               </div>
-              <button
-                type="button"
-                    onClick={() => {
-                      setImportedModalOpen(false);
-                      setEditingImportedId("");
-                      setOriginalImportedEvent(null);
-                      setImportedDraft(null);
-                      setIsImportedModalReadOnly(false);
-                    }}
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[color:var(--background)] text-[color:var(--muted)]"
-              >
-                x
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    router.push(
+                      `/interview/room?type=imported&id=${encodeURIComponent(importedDraft.id)}&title=${encodeURIComponent(importedDraft.title || "Interview room")}`,
+                    )
+                  }
+                  className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[color:var(--background)] text-[color:var(--muted)]"
+                  title="Enter room"
+                  aria-label="Enter room"
+                >
+                  <RoomIcon />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setImportedModalOpen(false);
+                    setEditingImportedId("");
+                    setOriginalImportedEvent(null);
+                    setImportedDraft(null);
+                    setIsImportedModalReadOnly(false);
+                  }}
+                  className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[color:var(--background)] text-[color:var(--muted)]"
+                >
+                  x
+                </button>
+              </div>
             </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
@@ -2455,13 +2486,13 @@ export function InterviewCalendar({
       ) : null}
 
       <style jsx global>{`
-        .forest-interview button:not(:disabled),
-        .forest-interview a,
-        .forest-interview [role="button"] {
+        .nex-interview button:not(:disabled),
+        .nex-interview a,
+        .nex-interview [role="button"] {
           cursor: pointer;
         }
 
-        .forest-calendar-shell .fc {
+        .nex-calendar-shell .fc {
           --fc-border-color: rgba(198, 209, 198, 0.95);
           --fc-page-bg-color: #ffffff;
           --fc-neutral-bg-color: #f5f7f1;
@@ -2469,54 +2500,54 @@ export function InterviewCalendar({
           font-family: inherit;
         }
 
-        .forest-calendar-shell .fc-theme-standard td,
-        .forest-calendar-shell .fc-theme-standard th {
+        .nex-calendar-shell .fc-theme-standard td,
+        .nex-calendar-shell .fc-theme-standard th {
           border-color: rgba(198, 209, 198, 0.95);
         }
 
-        .forest-calendar-shell .fc-event.forest-event-readonly {
+        .nex-calendar-shell .fc-event.nex-event-readonly {
           opacity: 0.9;
         }
 
-        .forest-calendar-shell .fc-scrollgrid {
+        .nex-calendar-shell .fc-scrollgrid {
           border: 0;
         }
 
-        .forest-calendar-shell .fc-timegrid-axis,
-        .forest-calendar-shell .fc-timegrid-slot-label {
+        .nex-calendar-shell .fc-timegrid-axis,
+        .nex-calendar-shell .fc-timegrid-slot-label {
           width: 0 !important;
         }
 
-        .forest-calendar-shell .fc-timegrid-axis-frame,
-        .forest-calendar-shell .fc-timegrid-slot-label-frame,
-        .forest-calendar-shell .fc-timegrid-axis-cushion,
-        .forest-calendar-shell .fc-timegrid-slot-label-cushion {
+        .nex-calendar-shell .fc-timegrid-axis-frame,
+        .nex-calendar-shell .fc-timegrid-slot-label-frame,
+        .nex-calendar-shell .fc-timegrid-axis-cushion,
+        .nex-calendar-shell .fc-timegrid-slot-label-cushion {
           display: none !important;
         }
 
-        .forest-calendar-shell .fc-col-header-cell {
+        .nex-calendar-shell .fc-col-header-cell {
           background: linear-gradient(180deg, rgba(249, 251, 246, 0.94), #ffffff);
           padding: 10px 0;
         }
 
-        .forest-calendar-shell .fc-scrollgrid-section-header,
-        .forest-calendar-shell .fc-scrollgrid-section-header > th,
-        .forest-calendar-shell .fc-scrollgrid-section-header .fc-scroller-harness,
-        .forest-calendar-shell .fc-scrollgrid-section-header .fc-scroller,
-        .forest-calendar-shell .fc-col-header {
+        .nex-calendar-shell .fc-scrollgrid-section-header,
+        .nex-calendar-shell .fc-scrollgrid-section-header > th,
+        .nex-calendar-shell .fc-scrollgrid-section-header .fc-scroller-harness,
+        .nex-calendar-shell .fc-scrollgrid-section-header .fc-scroller,
+        .nex-calendar-shell .fc-col-header {
           position: sticky;
           top: 104px;
           z-index: 22;
           background: #ffffff;
         }
 
-        .forest-calendar-shell .fc-col-header-cell {
+        .nex-calendar-shell .fc-col-header-cell {
           position: sticky;
           top: 104px;
           z-index: 23;
         }
 
-        .forest-calendar-shell .fc-col-header-cell-cushion {
+        .nex-calendar-shell .fc-col-header-cell-cushion {
           padding: 10px 8px;
           color: #12211a;
           font-size: 11px;
@@ -2525,47 +2556,47 @@ export function InterviewCalendar({
           text-transform: uppercase;
         }
 
-        .forest-calendar-shell .fc-timegrid-slot {
+        .nex-calendar-shell .fc-timegrid-slot {
           height: 5px;
         }
 
-        .forest-calendar-shell .fc-timegrid-slot-minor {
+        .nex-calendar-shell .fc-timegrid-slot-minor {
           border-top-style: solid;
           border-top-color: transparent;
         }
 
-        .forest-calendar-shell td.fc-timegrid-slot-lane.fc-timegrid-slot-minor,
-        .forest-calendar-shell td.fc-timegrid-slot-label.fc-timegrid-slot-minor {
+        .nex-calendar-shell td.fc-timegrid-slot-lane.fc-timegrid-slot-minor,
+        .nex-calendar-shell td.fc-timegrid-slot-label.fc-timegrid-slot-minor {
           border-top-color: transparent !important;
         }
 
-        .forest-calendar-shell .fc-timegrid-slot-label-cushion,
-        .forest-calendar-shell .fc-timegrid-axis-cushion {
+        .nex-calendar-shell .fc-timegrid-slot-label-cushion,
+        .nex-calendar-shell .fc-timegrid-axis-cushion {
           color: #5d6f61;
           font-size: 12px;
           font-weight: 600;
         }
 
-        .forest-calendar-shell .fc-timegrid-now-indicator-line {
+        .nex-calendar-shell .fc-timegrid-now-indicator-line {
           border-color: #ff4f7a;
         }
 
-        .forest-calendar-shell .fc-timegrid-now-indicator-arrow {
+        .nex-calendar-shell .fc-timegrid-now-indicator-arrow {
           border-color: #ff4f7a;
           color: #ff4f7a;
         }
 
-        .forest-calendar-shell .fc-event {
+        .nex-calendar-shell .fc-event {
           border: 0;
           border-radius: 16px;
           box-shadow: 0 10px 24px rgba(18, 26, 19, 0.08);
         }
 
-        .forest-calendar-shell .fc-event-main {
+        .nex-calendar-shell .fc-event-main {
           padding: 0;
         }
 
-        .forest-calendar-shell .forest-event-card {
+        .nex-calendar-shell .nex-event-card {
           height: 100%;
           padding: 0;
           border: 1px solid transparent;
@@ -2573,37 +2604,37 @@ export function InterviewCalendar({
           overflow: hidden;
         }
 
-        .forest-calendar-shell .forest-event-scheduled .forest-event-card {
+        .nex-calendar-shell .nex-event-scheduled .nex-event-card {
           background: #fff4d6;
           border-color: #ffd86f;
           color: #b45309;
         }
 
-        .forest-calendar-shell .forest-event-confirmed .forest-event-card {
+        .nex-calendar-shell .nex-event-confirmed .nex-event-card {
           background: #e0f2fe;
           border-color: #7dd3fc;
           color: #075985;
         }
 
-        .forest-calendar-shell .forest-event-done .forest-event-card {
+        .nex-calendar-shell .nex-event-done .nex-event-card {
           background: #dff7e7;
           border-color: #86efac;
           color: #166534;
         }
 
-        .forest-calendar-shell .forest-event-cancelled .forest-event-card {
+        .nex-calendar-shell .nex-event-cancelled .nex-event-card {
           background: #ffe4e6;
           border-color: #fda4af;
           color: #be123c;
         }
 
-        .forest-calendar-shell .forest-event-imported .forest-event-card {
+        .nex-calendar-shell .nex-event-imported .nex-event-card {
           background: color-mix(in srgb, var(--event-color) 18%, white);
           border-color: var(--event-color);
           color: #294131;
         }
 
-        .forest-calendar-shell .forest-event-local-colored .forest-event-card {
+        .nex-calendar-shell .nex-event-local-colored .nex-event-card {
           background: color-mix(in srgb, var(--event-color) 18%, white);
           border-color: var(--event-color);
           color: #294131;
@@ -2662,7 +2693,7 @@ function renderCalendarEvent(arg: EventContentArg) {
 
   return (
     <div
-      className="forest-event-shell relative h-full"
+      className="nex-event-shell relative h-full"
       style={
         isImported || color
           ? ({ ["--event-color" as string]: color || "#7c9b7b" } as CSSProperties)
@@ -2670,7 +2701,7 @@ function renderCalendarEvent(arg: EventContentArg) {
       }
       title={tooltipLines.join("\n")}
     >
-      <div className="forest-event-card h-full">
+      <div className="nex-event-card h-full">
         <div className="flex items-start gap-1.5">
           <div
             className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold leading-none ${stepBadgeClass}`}
@@ -2920,6 +2951,25 @@ function PaletteIcon() {
       <circle cx="11.2" cy="8.2" r="1" />
       <circle cx="15.2" cy="8.8" r="1" />
       <circle cx="16.8" cy="12.8" r="1" />
+    </svg>
+  );
+}
+
+function RoomIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v6A2.5 2.5 0 0 1 17.5 16H11l-4.5 3V16H6.5A2.5 2.5 0 0 1 4 13.5Z" />
+      <path d="M9 10h6" />
+      <path d="M9 13h4" />
     </svg>
   );
 }

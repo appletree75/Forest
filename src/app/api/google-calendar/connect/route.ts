@@ -8,7 +8,7 @@ import {
   isGoogleCalendarConfigured,
 } from "@/lib/google-calendar";
 
-const GOOGLE_STATE_COOKIE = "forest_google_calendar_state";
+const GOOGLE_STATE_COOKIE = "nex_google_calendar_state";
 
 export async function GET(request: Request) {
   const user = await requireSession();

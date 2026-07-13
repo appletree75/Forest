@@ -33,6 +33,17 @@ enum InterviewStatus {
   Cancelled
 }
 
+enum RoomChatChannel {
+  team
+  ai
+}
+
+enum RoomMessageRole {
+  user
+  assistant
+  system
+}
+
 model User {
   id             String              @id @default(cuid())
   name           String
@@ -97,6 +108,18 @@ model AppSettings {
   updatedAt         DateTime @updatedAt
 }
 
+model ApiKeySetting {
+  id         String   @id @default(cuid())
+  provider   String
+  name       String
+  apiKey     String
+  isSelected Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([provider, isSelected])
+}
+
 model JobApplicationRow {
   id          String             @id @default(cuid())
   profileId   String
@@ -150,6 +173,34 @@ model Interview {
   @@index([scheduledDate, scheduledTime])
   @@index([callerUserId])
   @@index([ownerUserId])
+}
+
+model InterviewRoomMessage {
+  id        String          @id @default(cuid())
+  roomKey   String
+  eventType String
+  eventId   String
+  channel   RoomChatChannel
+  role      RoomMessageRole
+  userId    String?
+  userName  String
+  content   String
+  createdAt DateTime        @default(now())
+
+  @@index([roomKey, channel, createdAt])
+  @@index([eventType, eventId, createdAt])
+}
+
+model InterviewRoomPresence {
+  roomKey    String
+  userId     String
+  userName   String
+  userRole   Role
+  joinedAt   DateTime @default(now())
+  lastSeenAt DateTime @updatedAt
+
+  @@id([roomKey, userId])
+  @@index([lastSeenAt])
 }
 
 model IcsCalendarSource {

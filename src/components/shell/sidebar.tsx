@@ -20,7 +20,7 @@ export function Sidebar({ user, permissions }: SidebarProps) {
       return false;
     }
 
-    return window.localStorage.getItem("forest_sidebar_collapsed") === "true";
+    return window.localStorage.getItem("nex_sidebar_collapsed") === "true";
   });
 
   useEffect(() => {
@@ -44,8 +44,8 @@ export function Sidebar({ user, permissions }: SidebarProps) {
   const topItems = visibleItems.filter((item) => item.section !== "bottom");
   const bottomItems = visibleItems.filter((item) => item.section === "bottom");
   const labelStateClass = isCollapsed
-    ? "translate-x-2 opacity-0"
-    : "translate-x-0 opacity-100";
+    ? "max-w-0 translate-x-1 opacity-0"
+    : "max-w-[220px] translate-x-0 opacity-100";
 
   return (
     <aside
@@ -62,7 +62,7 @@ export function Sidebar({ user, permissions }: SidebarProps) {
             const nextValue = !isCollapsed;
             setIsCollapsed(nextValue);
             window.localStorage.setItem(
-              "forest_sidebar_collapsed",
+              "nex_sidebar_collapsed",
               String(nextValue),
             );
           }}
@@ -96,11 +96,11 @@ export function Sidebar({ user, permissions }: SidebarProps) {
                 key={item.href}
                 href={item.href}
                 onClick={() => setPendingHref(item.href)}
-                className={`relative flex h-14 w-full items-center overflow-hidden rounded-2xl px-3 text-sm font-medium transition-[background-color,color] duration-200 ${
+                className={`flex h-14 w-full items-center overflow-hidden rounded-2xl px-3 text-sm font-medium transition-[background-color,color] duration-200 ${
                   active
                     ? "bg-[color:var(--accent)] text-white"
                     : "text-[color:var(--foreground)] hover:bg-[color:var(--accent-soft)]"
-                } ${isCollapsed ? "justify-center" : ""}`}
+                } ${isCollapsed ? "justify-center" : "gap-3"}`}
                 title={item.label}
               >
                 <span
@@ -113,7 +113,7 @@ export function Sidebar({ user, permissions }: SidebarProps) {
                   <SidebarIcon icon={item.shortLabel} />
                 </span>
                 <span
-                  className={`pointer-events-none absolute left-[60px] right-3 overflow-hidden whitespace-nowrap transition-all duration-200 ease-out ${labelStateClass} ${
+                  className={`pointer-events-none overflow-hidden whitespace-nowrap transition-all duration-200 ease-out ${labelStateClass} ${
                     active ? "text-white" : ""
                   }`}
                   aria-hidden={isCollapsed}
@@ -137,11 +137,11 @@ export function Sidebar({ user, permissions }: SidebarProps) {
                 key={item.href}
                 href={item.href}
                 onClick={() => setPendingHref(item.href)}
-                className={`relative flex h-14 w-full items-center overflow-hidden rounded-2xl px-3 text-sm font-medium transition-[background-color,color] duration-200 ${
+                className={`flex h-14 w-full items-center overflow-hidden rounded-2xl px-3 text-sm font-medium transition-[background-color,color] duration-200 ${
                   active
                     ? "bg-[color:var(--accent)] text-white"
                     : "text-[color:var(--foreground)] hover:bg-[color:var(--accent-soft)]"
-                } ${isCollapsed ? "justify-center" : ""}`}
+                } ${isCollapsed ? "justify-center" : "gap-3"}`}
                 title={label}
               >
                 <span
@@ -154,7 +154,7 @@ export function Sidebar({ user, permissions }: SidebarProps) {
                   <SidebarIcon icon={item.shortLabel} />
                 </span>
                 <span
-                  className={`pointer-events-none absolute left-[60px] right-3 overflow-hidden whitespace-nowrap transition-all duration-200 ease-out ${labelStateClass} ${
+                  className={`pointer-events-none overflow-hidden whitespace-nowrap transition-all duration-200 ease-out ${labelStateClass} ${
                     active ? "text-white" : ""
                   }`}
                   aria-hidden={isCollapsed}
@@ -214,6 +214,20 @@ function SidebarIcon({ icon }: { icon: string }) {
         <svg viewBox="0 0 24 24" aria-hidden="true" className={className} fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="3" />
           <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a1.6 1.6 0 0 1 0 2.3 1.6 1.6 0 0 1-2.3 0l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V19a1.6 1.6 0 0 1-1.6 1.6 1.6 1.6 0 0 1-1.6-1.6v-.2a1 1 0 0 0-.6-.9 1 1 0 0 0-1.1.2l-.1.1a1.6 1.6 0 0 1-2.3 0 1.6 1.6 0 0 1 0-2.3l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H5a1.6 1.6 0 0 1-1.6-1.6A1.6 1.6 0 0 1 5 11h.2a1 1 0 0 0 .9-.6 1 1 0 0 0-.2-1.1l-.1-.1a1.6 1.6 0 0 1 0-2.3 1.6 1.6 0 0 1 2.3 0l.1.1a1 1 0 0 0 1.1.2h.1a1 1 0 0 0 .6-.9V5A1.6 1.6 0 0 1 12 3.4 1.6 1.6 0 0 1 13.6 5v.2a1 1 0 0 0 .6.9 1 1 0 0 0 1.1-.2l.1-.1a1.6 1.6 0 0 1 2.3 0 1.6 1.6 0 0 1 0 2.3l-.1.1a1 1 0 0 0-.2 1.1v.1a1 1 0 0 0 .9.6h.2A1.6 1.6 0 0 1 20.6 12 1.6 1.6 0 0 1 19 13.6h-.2a1 1 0 0 0-.4 1.4Z" />
+        </svg>
+      );
+    case "ST":
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true" className={className} fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 3v4" />
+          <path d="M12 17v4" />
+          <path d="M3 12h4" />
+          <path d="M17 12h4" />
+          <path d="m5.6 5.6 2.8 2.8" />
+          <path d="m15.6 15.6 2.8 2.8" />
+          <path d="m18.4 5.6-2.8 2.8" />
+          <path d="m8.4 15.6-2.8 2.8" />
+          <circle cx="12" cy="12" r="3.2" />
         </svg>
       );
     case "PF":

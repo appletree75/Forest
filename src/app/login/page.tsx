@@ -9,7 +9,7 @@ export default async function LoginPage() {
             Secure Login
           </div>
           <h2 className="mt-4 text-3xl font-semibold tracking-tight">
-            Sign in to Forest
+            Sign in to Nex
           </h2>
           <p className="mt-3 text-sm leading-6 text-[color:var(--muted)]">
             Use email and password to access your role-specific dashboard.

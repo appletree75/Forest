@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireSession } from "@/lib/auth";
+import { isDatabaseUnavailable } from "@/lib/database";
 import {
   createIcsCalendarSource,
   deleteIcsCalendarSource,
@@ -30,7 +31,14 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json({ ok: true, source });
-  } catch {
+  } catch (error) {
+    if (isDatabaseUnavailable(error)) {
+      return NextResponse.json(
+        { message: "Database is temporarily unavailable." },
+        { status: 503 },
+      );
+    }
+
     return NextResponse.json(
       { message: "Unable to add ICS calendar." },
       { status: 500 },
@@ -53,7 +61,14 @@ export async function DELETE(request: Request) {
 
     await deleteIcsCalendarSource(user.id, body.sourceId);
     return NextResponse.json({ ok: true });
-  } catch {
+  } catch (error) {
+    if (isDatabaseUnavailable(error)) {
+      return NextResponse.json(
+        { message: "Database is temporarily unavailable." },
+        { status: 503 },
+      );
+    }
+
     return NextResponse.json(
       { message: "Unable to remove ICS calendar." },
       { status: 500 },

@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 
-import { ensureDatabaseConnected } from "@/lib/database";
+import {
+  ensureDatabaseConnected,
+  isDatabaseUnavailable,
+} from "@/lib/database";
 import { prisma } from "@/lib/prisma";
 import type { IcsCalendarSource } from "@/lib/types";
 
@@ -21,24 +24,40 @@ function mapSource(source: {
 }
 
 export async function getIcsCalendarSources(userId: string) {
-  await ensureDatabaseConnected();
+  try {
+    await ensureDatabaseConnected();
 
-  const sources = await prisma.icsCalendarSource.findMany({
-    where: { ownerUserId: userId },
-    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-  });
+    const sources = await prisma.icsCalendarSource.findMany({
+      where: { ownerUserId: userId },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
 
-  return sources.map(mapSource);
+    return sources.map(mapSource);
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) {
+      throw error;
+    }
+
+    return [];
+  }
 }
 
 export async function getAllIcsCalendarSources() {
-  await ensureDatabaseConnected();
+  try {
+    await ensureDatabaseConnected();
 
-  const sources = await prisma.icsCalendarSource.findMany({
-    orderBy: [{ ownerUserId: "asc" }, { createdAt: "asc" }, { id: "asc" }],
-  });
+    const sources = await prisma.icsCalendarSource.findMany({
+      orderBy: [{ ownerUserId: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+    });
 
-  return sources.map(mapSource);
+    return sources.map(mapSource);
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) {
+      throw error;
+    }
+
+    return [];
+  }
 }
 
 export async function createIcsCalendarSource(

@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 
 export default async function HomePage() {
   const cookieStore = await cookies();
-  const hasSession = Boolean(cookieStore.get("forest_session")?.value);
+  const hasSession = Boolean(cookieStore.get("nex_session")?.value);
 
   redirect(hasSession ? "/dashboard" : "/login");
 }

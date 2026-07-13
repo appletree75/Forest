@@ -1,7 +1,10 @@
 import { Prisma } from "@prisma/client";
 import { revalidateTag, unstable_cache } from "next/cache";
 
-import { ensureDatabaseConnected } from "@/lib/database";
+import {
+  ensureDatabaseConnected,
+  isDatabaseUnavailable,
+} from "@/lib/database";
 import { prisma } from "@/lib/prisma";
 import { resolveSessionLocationName } from "@/lib/session-location";
 
@@ -32,32 +35,40 @@ type CreateAuditLogInput = {
 
 const getCachedRecentAuditLogs = unstable_cache(
   async (): Promise<AuditLogEntry[]> => {
-    await ensureDatabaseConnected();
+    try {
+      await ensureDatabaseConnected();
 
-    const rows = await prisma.auditLog.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 40,
-    });
+      const rows = await prisma.auditLog.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 40,
+      });
 
-    return Promise.all(
-      rows.map(async (row) => {
-        const ipAddress = row.ipAddress ?? "";
+      return Promise.all(
+        rows.map(async (row) => {
+          const ipAddress = row.ipAddress ?? "";
 
-        return {
-          id: row.id,
-          actorUserId: row.actorUserId ?? "",
-          actorEmail: row.actorEmail ?? "",
-          action: row.action,
-          targetType: row.targetType,
-          targetId: row.targetId ?? "",
-          targetLabel: row.targetLabel ?? "",
-          metadata: row.metadata ? JSON.stringify(row.metadata) : "",
-          ipAddress,
-          locationName: await resolveSessionLocationName(ipAddress),
-          createdAt: row.createdAt.toISOString(),
-        };
-      }),
-    );
+          return {
+            id: row.id,
+            actorUserId: row.actorUserId ?? "",
+            actorEmail: row.actorEmail ?? "",
+            action: row.action,
+            targetType: row.targetType,
+            targetId: row.targetId ?? "",
+            targetLabel: row.targetLabel ?? "",
+            metadata: row.metadata ? JSON.stringify(row.metadata) : "",
+            ipAddress,
+            locationName: await resolveSessionLocationName(ipAddress),
+            createdAt: row.createdAt.toISOString(),
+          };
+        }),
+      );
+    } catch (error) {
+      if (!isDatabaseUnavailable(error)) {
+        throw error;
+      }
+
+      return [];
+    }
   },
   ["audit-log-recent"],
   { tags: ["audit-log"] },

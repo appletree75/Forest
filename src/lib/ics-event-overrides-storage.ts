@@ -1,4 +1,7 @@
-import { ensureDatabaseConnected } from "@/lib/database";
+import {
+  ensureDatabaseConnected,
+  isDatabaseUnavailable,
+} from "@/lib/database";
 import { prisma } from "@/lib/prisma";
 import type { ImportedCalendarEventOverride } from "@/lib/types";
 
@@ -51,24 +54,40 @@ function mapOverride(override: {
 }
 
 export async function getIcsEventOverrides(userId: string) {
-  await ensureDatabaseConnected();
+  try {
+    await ensureDatabaseConnected();
 
-  const overrides = await prisma.icsEventOverride.findMany({
-    where: { userId },
-    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-  });
+    const overrides = await prisma.icsEventOverride.findMany({
+      where: { userId },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
 
-  return overrides.map(mapOverride);
+    return overrides.map(mapOverride);
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) {
+      throw error;
+    }
+
+    return [];
+  }
 }
 
 export async function getAllIcsEventOverrides() {
-  await ensureDatabaseConnected();
+  try {
+    await ensureDatabaseConnected();
 
-  const overrides = await prisma.icsEventOverride.findMany({
-    orderBy: [{ userId: "asc" }, { createdAt: "asc" }, { id: "asc" }],
-  });
+    const overrides = await prisma.icsEventOverride.findMany({
+      orderBy: [{ userId: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+    });
 
-  return overrides.map(mapOverride);
+    return overrides.map(mapOverride);
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) {
+      throw error;
+    }
+
+    return [];
+  }
 }
 
 export async function upsertIcsEventOverride(

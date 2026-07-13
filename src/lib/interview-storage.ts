@@ -2,7 +2,10 @@ import { randomUUID } from "node:crypto";
 
 import { InterviewStatus as PrismaInterviewStatus } from "@prisma/client";
 
-import { ensureDatabaseConnected } from "@/lib/database";
+import {
+  ensureDatabaseConnected,
+  isDatabaseUnavailable,
+} from "@/lib/database";
 import { prisma } from "@/lib/prisma";
 import type { InterviewEvent, InterviewStatus } from "@/lib/types";
 
@@ -73,13 +76,25 @@ function toStoredInterview(input: InterviewEvent) {
 }
 
 export async function getInterviewEvents() {
-  await ensureDatabaseConnected();
+  try {
+    await ensureDatabaseConnected();
 
-  const events = await prisma.interview.findMany({
-    orderBy: [{ scheduledDate: "asc" }, { scheduledTime: "asc" }, { id: "asc" }],
-  });
+    const events = await prisma.interview.findMany({
+      orderBy: [
+        { scheduledDate: "asc" },
+        { scheduledTime: "asc" },
+        { id: "asc" },
+      ],
+    });
 
-  return events.map(mapInterview);
+    return events.map(mapInterview);
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) {
+      throw error;
+    }
+
+    return [];
+  }
 }
 
 export async function createInterviewEvent(input: Omit<InterviewEvent, "id">) {

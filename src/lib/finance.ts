@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 
 import { unstable_cache, revalidateTag } from "next/cache";
 
-import { ensureDatabaseConnected, getSettingsId } from "@/lib/database";
+import {
+  ensureDatabaseConnected,
+  getSettingsId,
+  isDatabaseUnavailable,
+} from "@/lib/database";
 import { defaultPermissionMatrix } from "@/lib/permission-config";
 import { hashPassword, verifyPassword } from "@/lib/passwords";
 import { prisma } from "@/lib/prisma";
@@ -10,20 +14,28 @@ import type { FinanceTransaction } from "@/lib/types";
 
 const getCachedTransactions = unstable_cache(
   async (): Promise<FinanceTransaction[]> => {
-    await ensureDatabaseConnected();
+    try {
+      await ensureDatabaseConnected();
 
-    const transactions = await prisma.financeTransaction.findMany({
-      orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-    });
+      const transactions = await prisma.financeTransaction.findMany({
+        orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+      });
 
-    return transactions.map((transaction) => ({
-      id: transaction.id,
-      to: transaction.to,
-      amount: sanitizeAmount(transaction.amount),
-      date: transaction.date,
-      note: transaction.note,
-      createdAt: transaction.createdAt.toISOString(),
-    }));
+      return transactions.map((transaction) => ({
+        id: transaction.id,
+        to: transaction.to,
+        amount: sanitizeAmount(transaction.amount),
+        date: transaction.date,
+        note: transaction.note,
+        createdAt: transaction.createdAt.toISOString(),
+      }));
+    } catch (error) {
+      if (!isDatabaseUnavailable(error)) {
+        throw error;
+      }
+
+      return [];
+    }
   },
   ["finance-transactions"],
   { tags: ["finance-transactions"] },
@@ -92,7 +104,7 @@ export async function verifyFinancePassword(password: string) {
   }
 
   const fallbackPassword =
-    process.env.FINANCE_PANEL_PASSWORD?.trim() || "forest-finance";
+    process.env.FINANCE_PANEL_PASSWORD?.trim() || "nex-finance";
 
   return normalizedPassword === fallbackPassword;
 }

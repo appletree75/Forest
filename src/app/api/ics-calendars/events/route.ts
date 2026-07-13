@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireSession } from "@/lib/auth";
+import { isDatabaseUnavailable } from "@/lib/database";
 import {
   deleteIcsEventOverride,
   upsertIcsEventOverride,
@@ -54,7 +55,14 @@ export async function PUT(request: Request) {
     });
 
     return NextResponse.json({ ok: true });
-  } catch {
+  } catch (error) {
+    if (isDatabaseUnavailable(error)) {
+      return NextResponse.json(
+        { message: "Database is temporarily unavailable." },
+        { status: 503 },
+      );
+    }
+
     return NextResponse.json(
       { message: "Unable to update imported calendar event." },
       { status: 500 },
@@ -77,7 +85,14 @@ export async function DELETE(request: Request) {
 
     await deleteIcsEventOverride(user.id, body.id);
     return NextResponse.json({ ok: true });
-  } catch {
+  } catch (error) {
+    if (isDatabaseUnavailable(error)) {
+      return NextResponse.json(
+        { message: "Database is temporarily unavailable." },
+        { status: 503 },
+      );
+    }
+
     return NextResponse.json(
       { message: "Unable to reset imported calendar event." },
       { status: 500 },

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getSessionUser } from "@/lib/auth";
+import { isDatabaseUnavailable } from "@/lib/database";
 import {
   JobApplicationVersionConflictError,
   loadJobApplicationRows,
@@ -55,7 +56,19 @@ export async function GET(request: Request) {
     const { rows, version } = await loadJobApplicationRows(profileId, dayKey);
 
     return NextResponse.json({ profileId, dayKey, rows, version });
-  } catch {
+  } catch (error) {
+    if (isDatabaseUnavailable(error)) {
+      return NextResponse.json(
+        {
+          message: "Database is temporarily unavailable.",
+          results: [],
+          rows: [],
+          version: 0,
+        },
+        { status: 503 },
+      );
+    }
+
     return NextResponse.json(
       { message: "Unable to load job application table." },
       { status: 500 },
@@ -122,6 +135,13 @@ export async function POST(request: Request) {
           version: error.currentVersion,
         },
         { status: 409 },
+      );
+    }
+
+    if (isDatabaseUnavailable(error)) {
+      return NextResponse.json(
+        { message: "Database is temporarily unavailable." },
+        { status: 503 },
       );
     }
 

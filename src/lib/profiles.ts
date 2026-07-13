@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 
-import { ensureDatabaseConnected } from "@/lib/database";
+import {
+  ensureDatabaseConnected,
+  isDatabaseUnavailable,
+} from "@/lib/database";
 import { prisma } from "@/lib/prisma";
 import type {
   PersonalProfile,
@@ -9,35 +12,51 @@ import type {
 } from "@/lib/types";
 
 export async function getProfiles(): Promise<PersonalProfile[]> {
-  await ensureDatabaseConnected();
+  try {
+    await ensureDatabaseConnected();
 
-  const profiles = await prisma.profile.findMany({
-    orderBy: [{ sortOrder: "asc" }, { fullName: "asc" }],
-  });
+    const profiles = await prisma.profile.findMany({
+      orderBy: [{ sortOrder: "asc" }, { fullName: "asc" }],
+    });
 
-  return profiles.map((profile) => ({
-    id: profile.id,
-    fullName: profile.fullName,
-    email: profile.email,
-    dob: profile.dob,
-    address: profile.address,
-    phoneNumber: profile.phoneNumber,
-    linkedinUrl: profile.linkedinUrl,
-  }));
+    return profiles.map((profile) => ({
+      id: profile.id,
+      fullName: profile.fullName,
+      email: profile.email,
+      dob: profile.dob,
+      address: profile.address,
+      phoneNumber: profile.phoneNumber,
+      linkedinUrl: profile.linkedinUrl,
+    }));
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) {
+      throw error;
+    }
+
+    return [];
+  }
 }
 
 export async function getProfileAssignments(): Promise<ProfileAssignmentMap> {
-  await ensureDatabaseConnected();
+  try {
+    await ensureDatabaseConnected();
 
-  const assignments = await prisma.profileAssignment.findMany();
+    const assignments = await prisma.profileAssignment.findMany();
 
-  return assignments.reduce<ProfileAssignmentMap>((acc, assignment) => {
-    acc[assignment.bidderUserId] = [
-      ...(acc[assignment.bidderUserId] ?? []),
-      assignment.profileId,
-    ];
-    return acc;
-  }, {});
+    return assignments.reduce<ProfileAssignmentMap>((acc, assignment) => {
+      acc[assignment.bidderUserId] = [
+        ...(acc[assignment.bidderUserId] ?? []),
+        assignment.profileId,
+      ];
+      return acc;
+    }, {});
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) {
+      throw error;
+    }
+
+    return {};
+  }
 }
 
 export async function setProfileAssignments(assignments: ProfileAssignmentMap) {
@@ -57,19 +76,27 @@ export async function setProfileAssignments(assignments: ProfileAssignmentMap) {
 }
 
 export async function getBidderUsers() {
-  await ensureDatabaseConnected();
+  try {
+    await ensureDatabaseConnected();
 
-  const users = await prisma.user.findMany({
-    where: { role: "bidder" },
-    orderBy: { name: "asc" },
-  });
+    const users = await prisma.user.findMany({
+      where: { role: "bidder" },
+      orderBy: { name: "asc" },
+    });
 
-  return users.map(({ id, name, email, role }) => ({
-    id,
-    name,
-    email,
-    role,
-  }));
+    return users.map(({ id, name, email, role }) => ({
+      id,
+      name,
+      email,
+      role,
+    }));
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) {
+      throw error;
+    }
+
+    return [];
+  }
 }
 
 export async function getVisibleProfilesForUser(user: SessionUser) {

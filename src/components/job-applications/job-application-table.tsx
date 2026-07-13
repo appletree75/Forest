@@ -22,8 +22,8 @@ import type {
   Stack,
 } from "@/lib/types";
 
-const tableCopyStorageKey = "forest_job_application_table_copy";
-const customStackOptionsStorageKey = "forest_job_application_custom_stacks";
+const tableCopyStorageKey = "nex_job_application_table_copy";
+const customStackOptionsStorageKey = "nex_job_application_custom_stacks";
 
 const copyableColumns = [
   { key: "platform", label: "Platform" },

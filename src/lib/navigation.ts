@@ -6,6 +6,7 @@ export type NavItem = {
     | "/job-application"
     | "/interview"
     | "/chat"
+    | "/settings"
     | "/admin"
     | "/profiles"
     | "/profile";
@@ -42,6 +43,13 @@ export const navItems: NavItem[] = [
     label: "Chat",
     shortLabel: "CH",
     permission: "view_chat",
+    section: "top",
+  },
+  {
+    href: "/settings",
+    label: "Settings",
+    shortLabel: "ST",
+    permission: "view_settings",
     section: "top",
   },
   {

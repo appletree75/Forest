@@ -6,8 +6,8 @@ import { validateServerEnv } from "@/lib/env";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Forest",
-  description: "Forest IT business operations dashboard",
+  title: "Nex",
+  description: "Nex IT business operations dashboard",
 };
 
 export default function RootLayout({

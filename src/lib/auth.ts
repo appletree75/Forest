@@ -5,7 +5,11 @@ import { Prisma } from "@prisma/client";
 
 import { createAuditLog } from "@/lib/audit-log";
 import { addHours } from "@/lib/dates";
-import { createSessionToken, ensureDatabaseConnected } from "@/lib/database";
+import {
+  createSessionToken,
+  ensureDatabaseConnected,
+  isDatabaseUnavailable,
+} from "@/lib/database";
 import {
   clearLoginRateLimit,
   getLoginRateLimitKey,
@@ -19,7 +23,7 @@ import { prisma } from "@/lib/prisma";
 import { getPermissionMatrix, getRolePermissions } from "@/lib/permissions";
 import type { PermissionKey, SessionUser } from "@/lib/types";
 
-const sessionCookieKey = "forest_session";
+const sessionCookieKey = "nex_session";
 type SessionCookiePayload = {
   token: string;
   user: SessionUser;
@@ -97,8 +101,19 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
 });
 
 export async function signIn(email: string, password: string) {
-  await ensureDatabaseConnected();
-  await pruneExpiredLoginRateLimits();
+  try {
+    await ensureDatabaseConnected();
+    await pruneExpiredLoginRateLimits();
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) {
+      throw error;
+    }
+
+    return {
+      ok: false as const,
+      message: "Database is temporarily unavailable. Please try again.",
+    };
+  }
 
   const normalizedEmail = email.toLowerCase().trim();
   const requestHeaders = await headers();
@@ -122,9 +137,22 @@ export async function signIn(email: string, password: string) {
     };
   }
 
-  const matchedUser = await prisma.user.findUnique({
-    where: { email: normalizedEmail },
-  });
+  let matchedUser: Awaited<ReturnType<typeof prisma.user.findUnique>> = null;
+
+  try {
+    matchedUser = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) {
+      throw error;
+    }
+
+    return {
+      ok: false as const,
+      message: "Database is temporarily unavailable. Please try again.",
+    };
+  }
 
   if (!matchedUser || !verifyPassword(password, matchedUser.passwordHash)) {
     await recordFailedLoginAttempt(rateLimitKey, normalizedEmail, ipAddress);
@@ -275,14 +303,6 @@ function getDeviceInfoFromUserAgent(userAgent: string) {
   }
 
   return os || browser || "Unknown";
-}
-
-function isDatabaseUnavailable(error: unknown) {
-  return (
-    (error instanceof Prisma.PrismaClientKnownRequestError &&
-      (error.code === "P1001" || error.code === "P2024")) ||
-    error instanceof Prisma.PrismaClientInitializationError
-  );
 }
 
 function getOsNameAndVersion(userAgent: string) {

@@ -13,7 +13,7 @@ Create an environment variable named `DATABASE_URL`.
 Example:
 
 ```env
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/forest?schema=public"
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/nex?schema=public"
 ```
 
 Optional for Google Calendar sync:
@@ -66,10 +66,10 @@ npm run dev
 
 On a fresh database, the app seeds these accounts automatically:
 
-- Admin: `admin@forest.local` / `admin123`
-- Bidder: `bidder@forest.local` / `bidder123`
-- Caller: `caller@forest.local` / `caller123`
-- Supportor: `supportor@forest.local` / `supportor123`
+- Admin: `admin@nex.local` / `admin123`
+- Bidder: `bidder@nex.local` / `bidder123`
+- Caller: `caller@nex.local` / `caller123`
+- Supportor: `supportor@nex.local` / `supportor123`
 
 Change these immediately in production.
 
@@ -77,7 +77,7 @@ Change these immediately in production.
 
 ### Recommended: Render + Neon
 
-This repo now includes [render.yaml](/D:/forest/render.yaml) so Render can deploy it as a standard Node web service.
+This repo now includes [render.yaml](./render.yaml) so Render can deploy it as a standard Node web service.
 
 1. Create a PostgreSQL database in `Neon`.
 2. In Render, create a Blueprint deployment from this repo.

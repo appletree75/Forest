@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getSessionUser } from "@/lib/auth";
+import { isDatabaseUnavailable } from "@/lib/database";
 import {
   deleteInterviewEventFromGoogleCalendar,
   syncInterviewEventToGoogleCalendar,
@@ -28,7 +29,14 @@ export async function POST(request: Request) {
     });
     await syncInterviewEventToGoogleCalendar(sessionUser.id, event);
     return NextResponse.json({ ok: true, event });
-  } catch {
+  } catch (error) {
+    if (isDatabaseUnavailable(error)) {
+      return NextResponse.json(
+        { message: "Database is temporarily unavailable." },
+        { status: 503 },
+      );
+    }
+
     return NextResponse.json(
       { message: "Unable to create interview event." },
       { status: 500 },
@@ -60,7 +68,14 @@ export async function PUT(request: Request) {
       await syncInterviewEventToGoogleCalendar(sessionUser.id, event);
     }
     return NextResponse.json({ ok: true, event });
-  } catch {
+  } catch (error) {
+    if (isDatabaseUnavailable(error)) {
+      return NextResponse.json(
+        { message: "Database is temporarily unavailable." },
+        { status: 503 },
+      );
+    }
+
     return NextResponse.json(
       { message: "Unable to update interview event." },
       { status: 500 },
@@ -95,7 +110,14 @@ export async function DELETE(request: Request) {
     await deleteInterviewEvent(body.id);
     await deleteInterviewEventFromGoogleCalendar(sessionUser.id, body.id);
     return NextResponse.json({ ok: true });
-  } catch {
+  } catch (error) {
+    if (isDatabaseUnavailable(error)) {
+      return NextResponse.json(
+        { message: "Database is temporarily unavailable." },
+        { status: 503 },
+      );
+    }
+
     return NextResponse.json(
       { message: "Unable to delete interview event." },
       { status: 500 },

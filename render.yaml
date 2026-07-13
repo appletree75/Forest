@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: forest
+    name: nex
     env: node
     plan: starter
     autoDeploy: true

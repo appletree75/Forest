@@ -1,7 +1,10 @@
 import { unstable_cache } from "next/cache";
 import { Role as PrismaRole } from "@prisma/client";
 
-import { ensureDatabaseConnected } from "@/lib/database";
+import {
+  ensureDatabaseConnected,
+  isDatabaseUnavailable,
+} from "@/lib/database";
 import { hashPassword } from "@/lib/passwords";
 import { prisma } from "@/lib/prisma";
 import { resolveSessionLocationName } from "@/lib/session-location";
@@ -28,30 +31,38 @@ async function mapSession(session: {
 
 const getCachedUsers = unstable_cache(
   async (): Promise<ManagedUser[]> => {
-  await ensureDatabaseConnected();
+    try {
+      await ensureDatabaseConnected();
 
-  const users = await prisma.user.findMany({
-    include: {
-      sessions: {
-        orderBy: { createdAt: "desc" },
-      },
-    },
-    orderBy: [{ role: "asc" }, { name: "asc" }],
-  });
+      const users = await prisma.user.findMany({
+        include: {
+          sessions: {
+            orderBy: { createdAt: "desc" },
+          },
+        },
+        orderBy: [{ role: "asc" }, { name: "asc" }],
+      });
 
-  return Promise.all(
-    users.map(async (user) => ({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      password: "",
-      sessions: await Promise.all(user.sessions.map(mapSession)),
-      bidderAppliedRate: user.bidderAppliedRate,
-      bidderFailedRate: user.bidderFailedRate,
-      callerHourlyRate: user.callerHourlyRate,
-    })),
-  );
+      return Promise.all(
+        users.map(async (user) => ({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          password: "",
+          sessions: await Promise.all(user.sessions.map(mapSession)),
+          bidderAppliedRate: user.bidderAppliedRate,
+          bidderFailedRate: user.bidderFailedRate,
+          callerHourlyRate: user.callerHourlyRate,
+        })),
+      );
+    } catch (error) {
+      if (!isDatabaseUnavailable(error)) {
+        throw error;
+      }
+
+      return [];
+    }
   },
   ["users"],
   { tags: ["users"] },
@@ -59,23 +70,31 @@ const getCachedUsers = unstable_cache(
 
 const getCachedUsersBasic = unstable_cache(
   async (): Promise<ManagedUser[]> => {
-    await ensureDatabaseConnected();
+    try {
+      await ensureDatabaseConnected();
 
-    const users = await prisma.user.findMany({
-      orderBy: [{ role: "asc" }, { name: "asc" }],
-    });
+      const users = await prisma.user.findMany({
+        orderBy: [{ role: "asc" }, { name: "asc" }],
+      });
 
-    return users.map((user) => ({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      password: "",
-      sessions: [],
-      bidderAppliedRate: user.bidderAppliedRate,
-      bidderFailedRate: user.bidderFailedRate,
-      callerHourlyRate: user.callerHourlyRate,
-    }));
+      return users.map((user) => ({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        password: "",
+        sessions: [],
+        bidderAppliedRate: user.bidderAppliedRate,
+        bidderFailedRate: user.bidderFailedRate,
+        callerHourlyRate: user.callerHourlyRate,
+      }));
+    } catch (error) {
+      if (!isDatabaseUnavailable(error)) {
+        throw error;
+      }
+
+      return [];
+    }
   },
   ["users-basic"],
   { tags: ["users"] },
@@ -112,24 +131,32 @@ export async function getUserById(id: string) {
 }
 
 export async function getUsersByRole(role: Role) {
-  await ensureDatabaseConnected();
+  try {
+    await ensureDatabaseConnected();
 
-  const users = await prisma.user.findMany({
-    where: { role: role as PrismaRole },
-    orderBy: { name: "asc" },
-  });
+    const users = await prisma.user.findMany({
+      where: { role: role as PrismaRole },
+      orderBy: { name: "asc" },
+    });
 
-  return users.map((user) => ({
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    password: "",
-    sessions: [],
-    bidderAppliedRate: user.bidderAppliedRate,
-    bidderFailedRate: user.bidderFailedRate,
-    callerHourlyRate: user.callerHourlyRate,
-  }));
+    return users.map((user) => ({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      password: "",
+      sessions: [],
+      bidderAppliedRate: user.bidderAppliedRate,
+      bidderFailedRate: user.bidderFailedRate,
+      callerHourlyRate: user.callerHourlyRate,
+    }));
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) {
+      throw error;
+    }
+
+    return [];
+  }
 }
 
 export async function createUser(user: {

@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 
-import { ensureDatabaseConnected } from "@/lib/database";
+import {
+  ensureDatabaseConnected,
+  isDatabaseUnavailable,
+} from "@/lib/database";
 import { prisma } from "@/lib/prisma";
 
 export type GoogleCalendarConnection = {
@@ -67,24 +70,40 @@ function mapLink(link: {
 }
 
 export async function getGoogleCalendarConnections(userId: string) {
-  await ensureDatabaseConnected();
+  try {
+    await ensureDatabaseConnected();
 
-  const connections = await prisma.googleCalendarConnection.findMany({
-    where: { userId },
-    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-  });
+    const connections = await prisma.googleCalendarConnection.findMany({
+      where: { userId },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
 
-  return connections.map(mapConnection);
+    return connections.map(mapConnection);
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) {
+      throw error;
+    }
+
+    return [];
+  }
 }
 
 export async function getAllGoogleCalendarConnections() {
-  await ensureDatabaseConnected();
+  try {
+    await ensureDatabaseConnected();
 
-  const connections = await prisma.googleCalendarConnection.findMany({
-    orderBy: [{ userId: "asc" }, { createdAt: "asc" }, { id: "asc" }],
-  });
+    const connections = await prisma.googleCalendarConnection.findMany({
+      orderBy: [{ userId: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+    });
 
-  return connections.map(mapConnection);
+    return connections.map(mapConnection);
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) {
+      throw error;
+    }
+
+    return [];
+  }
 }
 
 export async function upsertGoogleCalendarConnection(
