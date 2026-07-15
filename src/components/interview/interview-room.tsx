@@ -1,9 +1,11 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import type {
+  InterviewRoomContext,
   InterviewRoomMessage,
   InterviewRoomPresence,
   SessionUser,
@@ -19,6 +21,7 @@ type InterviewRoomProps = {
   user: SessionUser;
   initialPresence: InterviewRoomPresence[];
   initialMessages: InterviewRoomMessage[];
+  initialContext: InterviewRoomContext;
 };
 
 export function InterviewRoom({
@@ -26,10 +29,15 @@ export function InterviewRoom({
   user,
   initialPresence,
   initialMessages,
+  initialContext,
 }: InterviewRoomProps) {
   const router = useRouter();
   const [presence, setPresence] = useState(initialPresence);
   const [serverMessages, setServerMessages] = useState(initialMessages);
+  const [roomContext, setRoomContext] = useState(initialContext);
+  const [contextDraft, setContextDraft] = useState(initialContext);
+  const [contextModalOpen, setContextModalOpen] = useState(false);
+  const [contextSaving, setContextSaving] = useState(false);
   const [pendingMessages, setPendingMessages] = useState<RoomUiMessage[]>([]);
   const [teamDraft, setTeamDraft] = useState("");
   const [aiDraft, setAiDraft] = useState("");
@@ -115,6 +123,7 @@ export function InterviewRoom({
         degraded?: boolean;
         presence: InterviewRoomPresence[];
         messages: InterviewRoomMessage[];
+        context: InterviewRoomContext;
       };
 
       if (payload.degraded) {
@@ -125,6 +134,10 @@ export function InterviewRoom({
       setRoomDegraded(false);
       setPresence(payload.presence);
       setServerMessages(payload.messages);
+      setRoomContext(payload.context);
+      setContextDraft((current) =>
+        contextModalOpen ? current : payload.context,
+      );
     };
 
     void syncRoom().catch(() => {
@@ -138,7 +151,7 @@ export function InterviewRoom({
     }, 4000);
 
     return () => window.clearInterval(intervalId);
-  }, [roomKey]);
+  }, [contextModalOpen, roomKey]);
 
   useEffect(() => {
     if (!shouldScrollTeamOnNextRenderRef.current && !shouldFollowTeamRef.current) {
@@ -295,9 +308,74 @@ export function InterviewRoom({
     })();
   };
 
+  const saveContext = async () => {
+    setContextSaving(true);
+    setMessageError("");
+
+    try {
+      const response = await fetch("/api/interview-rooms", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          roomKey,
+          resume: contextDraft.resume,
+          jd: contextDraft.jd,
+          details: contextDraft.details,
+          reference: contextDraft.reference,
+        }),
+      });
+
+      const payload = (await response.json()) as {
+        message?: string;
+        context?: InterviewRoomContext;
+      };
+
+      if (!response.ok || !payload.context) {
+        throw new Error(payload.message || "Unable to save AI room context.");
+      }
+
+      setRoomContext(payload.context);
+      setContextDraft(payload.context);
+      setContextModalOpen(false);
+    } catch (error) {
+      setMessageError(
+        error instanceof Error ? error.message : "Unable to save AI room context.",
+      );
+    } finally {
+      setContextSaving(false);
+    }
+  };
+
   return (
     <div className="flex h-[calc(100vh-3rem)] min-h-0 flex-col gap-3 overflow-hidden md:h-[calc(100vh-4rem)]">
-      <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+      <div className="flex flex-wrap items-center gap-3 px-1">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          aria-label="Back"
+          className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border)] bg-white text-[color:var(--foreground)] shadow-[0_6px_18px_rgba(24,34,24,0.05)] transition hover:border-[color:var(--accent)] hover:text-[color:var(--accent)]"
+        >
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 20 20"
+            fill="none"
+            className="h-4 w-4"
+          >
+            <path
+              d="M12.75 4.75 7.5 10l5.25 5.25"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <path
+              d="M8 10h6"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
           {presence.map((member) => (
             <div
@@ -321,33 +399,6 @@ export function InterviewRoom({
             </div>
           ))}
         </div>
-        <button
-          type="button"
-          onClick={() => router.back()}
-          aria-label="Back"
-          className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border)] bg-white text-[color:var(--foreground)] shadow-[0_6px_18px_rgba(24,34,24,0.05)]"
-        >
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 20 20"
-            fill="none"
-            className="h-4 w-4"
-          >
-            <path
-              d="M12.75 4.75 7.5 10l5.25 5.25"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            <path
-              d="M8 10h6"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
       </div>
 
       {roomDegraded ? (
@@ -367,6 +418,18 @@ export function InterviewRoom({
         <ChatColumn
           title="AI room"
           description="Shared AI conversation visible to everyone in the room."
+          headerAction={
+            <button
+              type="button"
+              onClick={() => {
+                setContextDraft(roomContext);
+                setContextModalOpen(true);
+              }}
+              className="rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm font-medium transition hover:bg-[color:var(--background)]"
+            >
+              AI context
+            </button>
+          }
           messages={aiMessages}
           currentUserId={user.id}
           groupAiReplies
@@ -403,6 +466,80 @@ export function InterviewRoom({
           }}
         />
       </div>
+
+      {contextModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,15,0.35)] p-4">
+          <div className="w-full max-w-4xl rounded-[28px] border border-[var(--border)] bg-white p-6 shadow-[0_24px_80px_rgba(24,34,24,0.2)]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.22em] text-[color:var(--muted)]">
+                  AI context
+                </div>
+                <h2 className="mt-2 text-3xl font-semibold tracking-tight">
+                  Shared recruiter context
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setContextModalOpen(false)}
+                className="flex h-12 w-12 items-center justify-center rounded-full border border-[var(--border)] bg-[color:var(--background)] text-[color:var(--muted)] transition hover:bg-white"
+                aria-label="Close"
+              >
+                X
+              </button>
+            </div>
+
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
+              <ContextField
+                label="Resume"
+                value={contextDraft.resume}
+                onChange={(value) =>
+                  setContextDraft((current) => ({ ...current, resume: value }))
+                }
+              />
+              <ContextField
+                label="JD"
+                value={contextDraft.jd}
+                onChange={(value) =>
+                  setContextDraft((current) => ({ ...current, jd: value }))
+                }
+              />
+              <ContextField
+                label="Details"
+                value={contextDraft.details}
+                onChange={(value) =>
+                  setContextDraft((current) => ({ ...current, details: value }))
+                }
+              />
+              <ContextField
+                label="Reference"
+                value={contextDraft.reference}
+                onChange={(value) =>
+                  setContextDraft((current) => ({ ...current, reference: value }))
+                }
+              />
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setContextModalOpen(false)}
+                className="rounded-xl border border-[var(--border)] bg-[color:var(--background)] px-5 py-3 text-base font-medium transition hover:bg-white"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveContext()}
+                disabled={contextSaving}
+                className="rounded-xl bg-[color:var(--accent)] px-5 py-3 text-base font-semibold text-white transition hover:opacity-90 disabled:opacity-60"
+              >
+                {contextSaving ? "Saving..." : "Save context"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -429,6 +566,7 @@ function scrollContainerToBottom(container: HTMLDivElement | null) {
 function ChatColumn({
   title,
   description,
+  headerAction,
   messages,
   currentUserId,
   groupAiReplies = false,
@@ -442,6 +580,7 @@ function ChatColumn({
 }: {
   title: string;
   description: string;
+  headerAction?: ReactNode;
   messages: RoomUiMessage[];
   currentUserId: string;
   groupAiReplies?: boolean;
@@ -461,8 +600,13 @@ function ChatColumn({
   return (
     <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-[var(--border)] bg-white shadow-[0_16px_50px_rgba(24,34,24,0.06)]">
       <div className="border-b border-[var(--border)] px-5 py-4">
-        <div className="text-lg font-semibold">{title}</div>
-        <div className="mt-1 text-sm text-[color:var(--muted)]">{description}</div>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-lg font-semibold">{title}</div>
+            <div className="mt-1 text-sm text-[color:var(--muted)]">{description}</div>
+          </div>
+          {headerAction}
+        </div>
       </div>
       <div
         ref={scrollRef}
@@ -544,6 +688,28 @@ function ChatColumn({
         </div>
       </div>
     </section>
+  );
+}
+
+function ContextField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block">
+      <div className="mb-2 text-sm font-medium">{label}</div>
+      <textarea
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        rows={8}
+        className="w-full rounded-2xl border border-[var(--border)] bg-[color:var(--background)] px-3 py-3 text-sm outline-none"
+      />
+    </label>
   );
 }
 

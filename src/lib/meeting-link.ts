@@ -1,5 +1,5 @@
 const MEETING_HOST_PATTERN =
-  /(?:^|\.)(teams\.microsoft\.com|meet\.google\.com|zoom\.us|webex\.com|whereby\.com|gotomeeting\.com|breezy\.hr|hireflix\.com|willo\.video)$/i;
+  /(?:^|\.)(teams\.microsoft\.com|meet\.google\.com|zoom\.us|webex\.com|whereby\.com|gotomeeting\.com|breezy\.hr|hireflix\.com|willo\.video|app\.cal\.com|cal\.com)$/i;
 
 const URL_PATTERN = /https?:\/\/[^\s<>"')]+/gi;
 const HTML_HREF_PATTERN = /href=["']([^"']+)["']/gi;

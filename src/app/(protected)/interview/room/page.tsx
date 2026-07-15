@@ -47,6 +47,7 @@ export default async function InterviewRoomPage({
       user={user}
       initialPresence={state.presence}
       initialMessages={state.messages}
+      initialContext={state.context}
     />
   );
 }

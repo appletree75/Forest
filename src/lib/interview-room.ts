@@ -8,6 +8,7 @@ import {
 import { ensureDatabaseConnected } from "@/lib/database";
 import { prisma } from "@/lib/prisma";
 import type {
+  InterviewRoomContext,
   InterviewRoomMessage,
   InterviewRoomPresence,
   Role,
@@ -71,6 +72,28 @@ function mapMessage(row: {
   };
 }
 
+function mapContext(row: {
+  roomKey: string;
+  resume: string;
+  jd: string;
+  details: string;
+  reference: string;
+  updatedBy: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): InterviewRoomContext {
+  return {
+    roomKey: row.roomKey,
+    resume: row.resume,
+    jd: row.jd,
+    details: row.details,
+    reference: row.reference,
+    updatedBy: row.updatedBy ?? "",
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
 export async function touchInterviewRoomPresence(input: {
   roomKey: string;
   userId: string;
@@ -117,7 +140,7 @@ export async function getInterviewRoomState(roomKey: string) {
   await pruneInterviewRoomPresence();
   await ensureDatabaseConnected();
 
-  const [presenceRows, messageRows] = await Promise.all([
+  const [presenceRows, messageRows, contextRow] = await Promise.all([
     prisma.interviewRoomPresence.findMany({
       where: { roomKey },
       orderBy: [{ userRole: "asc" }, { userName: "asc" }],
@@ -127,11 +150,28 @@ export async function getInterviewRoomState(roomKey: string) {
       orderBy: { createdAt: "asc" },
       take: 400,
     }),
+    prisma.interviewRoomContext.findUnique({
+      where: { roomKey },
+    }),
   ]);
 
   return {
     presence: presenceRows.map(mapPresence),
     messages: messageRows.map(mapMessage),
+    context: contextRow ? mapContext(contextRow) : emptyInterviewRoomContext(roomKey),
+  };
+}
+
+export function emptyInterviewRoomContext(roomKey: string): InterviewRoomContext {
+  return {
+    roomKey,
+    resume: "",
+    jd: "",
+    details: "",
+    reference: "",
+    updatedBy: "",
+    createdAt: new Date(0).toISOString(),
+    updatedAt: new Date(0).toISOString(),
   };
 }
 
@@ -162,4 +202,37 @@ export async function createInterviewRoomMessage(input: {
 
   revalidateTag(`room:${input.roomKey}`);
   return mapMessage(created);
+}
+
+export async function upsertInterviewRoomContext(input: {
+  roomKey: string;
+  resume: string;
+  jd: string;
+  details: string;
+  reference: string;
+  updatedBy: string;
+}) {
+  await ensureDatabaseConnected();
+
+  const saved = await prisma.interviewRoomContext.upsert({
+    where: { roomKey: input.roomKey },
+    update: {
+      resume: input.resume.trim(),
+      jd: input.jd.trim(),
+      details: input.details.trim(),
+      reference: input.reference.trim(),
+      updatedBy: input.updatedBy.trim() || null,
+    },
+    create: {
+      roomKey: input.roomKey,
+      resume: input.resume.trim(),
+      jd: input.jd.trim(),
+      details: input.details.trim(),
+      reference: input.reference.trim(),
+      updatedBy: input.updatedBy.trim() || null,
+    },
+  });
+
+  revalidateTag(`room:${input.roomKey}`);
+  return mapContext(saved);
 }

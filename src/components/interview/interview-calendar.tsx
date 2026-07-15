@@ -291,8 +291,14 @@ export function InterviewCalendar({
   const [originalImportedEvent, setOriginalImportedEvent] = useState<ImportedCalendarEvent | null>(
     null,
   );
+  const [enteringRoomKey, setEnteringRoomKey] = useState("");
   const autoRefreshBlocked =
     pending || modalOpen || importedModalOpen || icsModalOpen || addingIcsCalendar;
+
+  const navigateToRoom = (roomPath: string, roomKey: string) => {
+    setEnteringRoomKey(roomKey);
+    router.push(roomPath);
+  };
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -1852,15 +1858,21 @@ const openImportedEditModal = (
                   <button
                     type="button"
                     onClick={() =>
-                      router.push(
+                      navigateToRoom(
                         `/interview/room?type=local&id=${encodeURIComponent(editingId)}&title=${encodeURIComponent(draft.title || "Interview room")}`,
+                        `local:${editingId}`,
                       )
                     }
-                    className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[color:var(--background)] text-[color:var(--muted)]"
+                    disabled={enteringRoomKey === `local:${editingId}`}
+                    className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[color:var(--background)] text-[color:var(--muted)] transition hover:border-[color:var(--accent)] hover:text-[color:var(--accent)] disabled:cursor-wait disabled:opacity-70"
                     title="Enter room"
                     aria-label="Enter room"
                   >
-                    <RoomIcon />
+                    {enteringRoomKey === `local:${editingId}` ? (
+                      <RefreshIcon className="animate-spin" />
+                    ) : (
+                      <EnterRoomIcon />
+                    )}
                   </button>
                 ) : null}
                 <button
@@ -2255,15 +2267,21 @@ const openImportedEditModal = (
                 <button
                   type="button"
                   onClick={() =>
-                    router.push(
+                    navigateToRoom(
                       `/interview/room?type=imported&id=${encodeURIComponent(importedDraft.id)}&title=${encodeURIComponent(importedDraft.title || "Interview room")}`,
+                      `imported:${importedDraft.id}`,
                     )
                   }
-                  className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[color:var(--background)] text-[color:var(--muted)]"
+                  disabled={enteringRoomKey === `imported:${importedDraft.id}`}
+                  className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[color:var(--background)] text-[color:var(--muted)] transition hover:border-[color:var(--accent)] hover:text-[color:var(--accent)] disabled:cursor-wait disabled:opacity-70"
                   title="Enter room"
                   aria-label="Enter room"
                 >
-                  <RoomIcon />
+                  {enteringRoomKey === `imported:${importedDraft.id}` ? (
+                    <RefreshIcon className="animate-spin" />
+                  ) : (
+                    <EnterRoomIcon />
+                  )}
                 </button>
                 <button
                   type="button"
@@ -3036,7 +3054,7 @@ function PaletteIcon() {
   );
 }
 
-function RoomIcon() {
+function EnterRoomIcon() {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -3048,9 +3066,9 @@ function RoomIcon() {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v6A2.5 2.5 0 0 1 17.5 16H11l-4.5 3V16H6.5A2.5 2.5 0 0 1 4 13.5Z" />
-      <path d="M9 10h6" />
-      <path d="M9 13h4" />
+      <path d="M9 4.5h8a1.5 1.5 0 0 1 1.5 1.5v12a1.5 1.5 0 0 1-1.5 1.5H9" />
+      <path d="M13 12H4.5" />
+      <path d="m8.5 8-4 4 4 4" />
     </svg>
   );
 }

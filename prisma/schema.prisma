@@ -203,6 +203,19 @@ model InterviewRoomPresence {
   @@index([lastSeenAt])
 }
 
+model InterviewRoomContext {
+  roomKey    String   @id
+  resume     String   @default("")
+  jd         String   @default("")
+  details    String   @default("")
+  reference  String   @default("")
+  updatedBy  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([updatedBy])
+}
+
 model IcsCalendarSource {
   id          String   @id
   ownerUserId String

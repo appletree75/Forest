@@ -215,3 +215,14 @@ export type InterviewRoomMessage = {
   content: string;
   createdAt: string;
 };
+
+export type InterviewRoomContext = {
+  roomKey: string;
+  resume: string;
+  jd: string;
+  details: string;
+  reference: string;
+  updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
