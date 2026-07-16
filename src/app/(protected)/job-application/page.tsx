@@ -1,5 +1,6 @@
 import { JobApplicationTable } from "@/components/job-applications/job-application-table";
 import { getSessionUser } from "@/lib/auth";
+import { getJobApplicationStackOptions } from "@/lib/job-application-settings";
 import { getJobApplicationTablesForProfiles } from "@/lib/job-application-storage";
 import {
   getBidderUsers,
@@ -14,6 +15,7 @@ export default async function JobApplicationPage() {
   const bidderUsers = user?.role === "admin" ? await getBidderUsers() : [];
   const assignments = user?.role === "admin" ? await getProfileAssignments() : {};
   const salarySettings = await getSalarySettings();
+  const initialStackOptions = await getJobApplicationStackOptions();
   const todayKey = new Date().toISOString().slice(0, 10);
   const initialTables = await getJobApplicationTablesForProfiles(
     profiles,
@@ -30,6 +32,7 @@ export default async function JobApplicationPage() {
         bidderUsers={bidderUsers}
         assignments={assignments}
         salarySettings={salarySettings}
+        initialStackOptions={initialStackOptions}
         serverTodayKey={todayKey}
       />
     </>

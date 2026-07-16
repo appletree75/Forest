@@ -40,7 +40,7 @@ export const navItems: NavItem[] = [
   },
   {
     href: "/chat",
-    label: "Chat",
+    label: "Discussion",
     shortLabel: "CH",
     permission: "view_chat",
     section: "top",

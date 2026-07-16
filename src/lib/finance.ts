@@ -97,6 +97,9 @@ export async function verifyFinancePassword(password: string) {
       id: getSettingsId(),
       permissionMatrix: defaultPermissionMatrix,
     },
+    select: {
+      financePasswordHash: true,
+    },
   });
 
   if (settings.financePasswordHash) {
@@ -123,6 +126,9 @@ export async function setFinancePassword(password: string) {
       id: getSettingsId(),
       permissionMatrix: defaultPermissionMatrix,
       financePasswordHash: hashPassword(normalizedPassword),
+    },
+    select: {
+      id: true,
     },
   });
 }

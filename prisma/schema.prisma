@@ -103,6 +103,7 @@ model ProfileAssignment {
 model AppSettings {
   id                String  @id
   permissionMatrix  Json
+  jobApplicationStacks Json?
   financePasswordHash String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
@@ -214,6 +215,70 @@ model InterviewRoomContext {
   updatedAt  DateTime @updatedAt
 
   @@index([updatedBy])
+}
+
+model DiscussionRoom {
+  id              String                 @id @default(cuid())
+  name            String                 @unique
+  createdByUserId String?
+  lastMessageAt   DateTime               @default(now())
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  members         DiscussionRoomMember[]
+  presence        DiscussionRoomPresence[]
+  messages        DiscussionMessage[]
+
+  @@index([lastMessageAt])
+}
+
+model DiscussionRoomMember {
+  roomId    String
+  userId    String
+  createdAt DateTime       @default(now())
+  room      DiscussionRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@id([roomId, userId])
+  @@index([userId])
+}
+
+model DiscussionRoomPresence {
+  roomId      String
+  userId      String
+  userName    String
+  userRole    Role
+  joinedAt    DateTime       @default(now())
+  lastSeenAt  DateTime       @updatedAt
+  room        DiscussionRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@id([roomId, userId])
+  @@index([lastSeenAt])
+}
+
+model DiscussionMessage {
+  id        String                 @id @default(cuid())
+  roomId    String
+  userId    String
+  userName  String
+  content   String                 @default("")
+  createdAt DateTime               @default(now())
+  room      DiscussionRoom         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  attachments DiscussionAttachment[]
+
+  @@index([roomId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model DiscussionAttachment {
+  id        String            @id @default(cuid())
+  messageId String
+  name      String
+  mimeType  String
+  sizeBytes Int
+  dataUrl   String
+  createdAt DateTime          @default(now())
+  message   DiscussionMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
 }
 
 model IcsCalendarSource {

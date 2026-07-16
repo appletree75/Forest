@@ -226,3 +226,38 @@ export type InterviewRoomContext = {
   createdAt: string;
   updatedAt: string;
 };
+
+export type DiscussionRoom = {
+  id: string;
+  name: string;
+  memberUserIds: string[];
+  members: Array<{
+    id: string;
+    name: string;
+  }>;
+  memberCount: number;
+  activeUserIds: string[];
+  createdByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+  lastMessageAt: string;
+};
+
+export type DiscussionAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  dataUrl: string;
+  createdAt: string;
+};
+
+export type DiscussionMessage = {
+  id: string;
+  roomId: string;
+  userId: string;
+  userName: string;
+  content: string;
+  createdAt: string;
+  attachments: DiscussionAttachment[];
+};

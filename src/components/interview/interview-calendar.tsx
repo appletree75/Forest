@@ -1,5 +1,6 @@
 "use client";
 
+import type { Route } from "next";
 import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -170,6 +171,10 @@ function mergeRefreshedLocalEvents(
     return currentEvents;
   }
 
+  if (looksLikePartialRefresh(currentEvents.length, nextEvents.length)) {
+    return currentEvents;
+  }
+
   return nextEvents;
 }
 
@@ -206,7 +211,9 @@ function mergeRefreshedImportedEvents(
     const currentSourceEvents = currentBySource.get(sourceId) ?? [];
     const sourceEvents =
       nextSourceEvents && nextSourceEvents.length > 0
-        ? nextSourceEvents
+        ? looksLikePartialRefresh(currentSourceEvents.length, nextSourceEvents.length)
+          ? currentSourceEvents
+          : nextSourceEvents
         : currentSourceEvents;
 
     for (const event of sourceEvents) {
@@ -229,6 +236,18 @@ function mergeRefreshedImportedEvents(
 
     return a.id.localeCompare(b.id);
   });
+}
+
+function looksLikePartialRefresh(currentCount: number, nextCount: number) {
+  if (currentCount < 4) {
+    return false;
+  }
+
+  if (nextCount === 0) {
+    return currentCount > 0;
+  }
+
+  return nextCount <= Math.floor(currentCount * 0.6);
 }
 
 export function InterviewCalendar({
@@ -297,7 +316,7 @@ export function InterviewCalendar({
 
   const navigateToRoom = (roomPath: string, roomKey: string) => {
     setEnteringRoomKey(roomKey);
-    router.push(roomPath);
+    router.push(roomPath as Route);
   };
 
   useEffect(() => {
@@ -1522,7 +1541,7 @@ const openImportedEditModal = (
                     <button
                       type="button"
                       onClick={() => openCreateModal(selectedDate)}
-                      className="flex h-11 items-center justify-center rounded-full bg-[color:var(--accent)] px-5 text-sm font-semibold tracking-[0.01em] text-white shadow-[0_12px_24px_rgba(18,26,19,0.14)] transition-all hover:-translate-y-[1px] hover:shadow-[0_16px_28px_rgba(18,26,19,0.18)]"
+                      className="flex h-11 items-center justify-center rounded-full bg-[color:var(--accent)] px-5 text-sm font-semibold tracking-[0.01em] text-white shadow-[0_12px_24px_rgba(18,26,19,0.14)] transition-all hover:shadow-[0_16px_28px_rgba(18,26,19,0.18)]"
                     >
                       + New event
                     </button>
@@ -1794,7 +1813,7 @@ const openImportedEditModal = (
           type="button"
           onClick={() => setIsToolsSidebarOpen((current) => !current)}
           className={`pointer-events-auto flex h-[56px] w-[56px] items-center justify-center text-[color:var(--accent)] transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-            isToolsSidebarOpen ? "translate-x-0" : "hover:-translate-x-1"
+            isToolsSidebarOpen ? "translate-x-0" : ""
           }`}
           aria-expanded={isToolsSidebarOpen}
           aria-controls="interview-tools-sidebar"

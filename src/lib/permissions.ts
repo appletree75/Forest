@@ -16,6 +16,7 @@ const getCachedPermissionMatrix = unstable_cache(
 
       const settings = await prisma.appSettings.findUnique({
         where: { id: getSettingsId() },
+        select: { permissionMatrix: true },
       });
 
       if (!settings) {

@@ -48,7 +48,6 @@ button:not(:disabled),
 [role="button"]:not([aria-disabled="true"]),
 a[href] {
   transition:
-    transform 160ms ease,
     filter 160ms ease,
     box-shadow 160ms ease,
     opacity 160ms ease,
@@ -59,12 +58,10 @@ a[href] {
 
 button:not(:disabled):hover,
 [role="button"]:not([aria-disabled="true"]):hover {
-  transform: translateY(-1px);
   filter: brightness(1.02);
 }
 
 button:not(:disabled):active,
 [role="button"]:not([aria-disabled="true"]):active {
-  transform: translateY(0);
   filter: brightness(0.99);
 }

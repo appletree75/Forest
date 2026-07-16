@@ -4,7 +4,7 @@ export const permissionLabels: Record<PermissionKey, string> = {
   view_dashboard: "Dashboard",
   view_job_application: "Job Application",
   view_interview: "Interview",
-  view_chat: "Chat",
+  view_chat: "Discussion",
   view_profile: "My Profile",
   view_profiles: "Profiles",
   view_settings: "Settings",

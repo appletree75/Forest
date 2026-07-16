@@ -1,11 +1,22 @@
-import { PageHeader } from "@/components/ui/page-header";
+import { DiscussionWorkspace } from "@/components/discussion/discussion-workspace";
+import { requireSession } from "@/lib/auth";
+import {
+  getDiscussionRoomsForUser,
+  getDiscussionVisibleUsersForUser,
+} from "@/lib/discussion";
 
-export default function ChatPage() {
+export default async function ChatPage() {
+  const user = await requireSession();
+  const [rooms, users] = await Promise.all([
+    getDiscussionRoomsForUser(user),
+    getDiscussionVisibleUsersForUser(user),
+  ]);
+
   return (
-    <PageHeader
-      eyebrow="Chat"
-      title="Team communication"
-      description=""
+    <DiscussionWorkspace
+      currentUser={user}
+      initialRooms={rooms}
+      initialUsers={users}
     />
   );
 }

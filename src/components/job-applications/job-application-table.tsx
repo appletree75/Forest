@@ -6,7 +6,6 @@ import {
   createBlankRow,
   createInitialRows,
   platformOptions,
-  stackOptions,
 } from "@/lib/job-applications";
 import { StatusSelect } from "@/components/job-applications/status-select";
 import type {
@@ -23,8 +22,6 @@ import type {
 } from "@/lib/types";
 
 const tableCopyStorageKey = "nex_job_application_table_copy";
-const customStackOptionsStorageKey = "nex_job_application_custom_stacks";
-
 const copyableColumns = [
   { key: "platform", label: "Platform" },
   { key: "company", label: "Company" },
@@ -64,6 +61,7 @@ type JobApplicationTableProps = {
   bidderUsers: SessionUser[];
   assignments: ProfileAssignmentMap;
   salarySettings: SalarySettings;
+  initialStackOptions: string[];
   serverTodayKey: string;
 };
 
@@ -75,6 +73,7 @@ export function JobApplicationTable({
   bidderUsers,
   assignments,
   salarySettings,
+  initialStackOptions,
   serverTodayKey,
 }: JobApplicationTableProps) {
   const dayInputRef = useRef<HTMLInputElement>(null);
@@ -82,6 +81,7 @@ export function JobApplicationTable({
   const saveTimeoutRef = useRef<number | null>(null);
   const latestTablesRef = useRef<JobApplicationTables>(initialTables);
   const tableVersionsRef = useRef<Record<string, number>>({});
+  const tableEditVersionsRef = useRef<Record<string, number>>({});
   const dirtyTableKeysRef = useRef<Set<string>>(new Set());
   const isSavingRef = useRef(false);
   const pendingFlushRef = useRef(false);
@@ -108,7 +108,9 @@ export function JobApplicationTable({
     "status",
   ]);
   const [copiedTable, setCopiedTable] = useState<CopiedTablePayload | null>(null);
-  const [customStackOptions, setCustomStackOptions] = useState<string[]>([]);
+  const [customStackOptions, setCustomStackOptions] = useState<string[]>(
+    initialStackOptions,
+  );
   const [newStackName, setNewStackName] = useState("");
   const [stackMessage, setStackMessage] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -130,19 +132,9 @@ export function JobApplicationTable({
       : [];
   const activeProfile =
     filteredProfiles.find((profile) => profile.id === activeProfileId) ?? null;
-  const managedStackOptions = customStackOptions;
-
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       setCopiedTable(getStoredCopiedTable());
-    }, 0);
-
-    return () => window.clearTimeout(timeoutId);
-  }, []);
-
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      setCustomStackOptions(getStoredCustomStacks());
     }, 0);
 
     return () => window.clearTimeout(timeoutId);
@@ -209,6 +201,9 @@ export function JobApplicationTable({
     }
 
     const requestId = ++refreshRequestIdRef.current;
+    const activeTableKey = getTableKey(activeProfileId, selectedDayKey);
+    const refreshStartedAtEditVersion =
+      tableEditVersionsRef.current[activeTableKey] ?? 0;
 
     const refreshSelectedTable = async () => {
       const flushedCleanly = await flushDirtyTables(
@@ -247,6 +242,13 @@ export function JobApplicationTable({
         };
 
         if (refreshRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        if (
+          (tableEditVersionsRef.current[activeTableKey] ?? 0) !==
+          refreshStartedAtEditVersion
+        ) {
           return;
         }
 
@@ -382,6 +384,10 @@ export function JobApplicationTable({
     field: K,
     value: JobApplication[K],
   ) => {
+    const tableKey = getTableKey(profileId, dayKey);
+    tableEditVersionsRef.current[tableKey] =
+      (tableEditVersionsRef.current[tableKey] ?? 0) + 1;
+
     setTablesByProfile((currentTables) => ({
       ...currentTables,
       [profileId]: {
@@ -398,6 +404,10 @@ export function JobApplicationTable({
     if (!activeProfileId || !selectedDayKey) {
       return;
     }
+
+    const tableKey = getTableKey(activeProfileId, selectedDayKey);
+    tableEditVersionsRef.current[tableKey] =
+      (tableEditVersionsRef.current[tableKey] ?? 0) + 1;
 
     setTablesByProfile((currentTables) => {
       const currentRows =
@@ -427,6 +437,10 @@ export function JobApplicationTable({
       return;
     }
 
+    const tableKey = getTableKey(activeProfileId, selectedDayKey);
+    tableEditVersionsRef.current[tableKey] =
+      (tableEditVersionsRef.current[tableKey] ?? 0) + 1;
+
     setTablesByProfile((currentTables) => {
       const currentRows =
         currentTables[activeProfileId]?.[selectedDayKey] ??
@@ -454,6 +468,10 @@ export function JobApplicationTable({
     if (!activeProfileId || !selectedDayKey || !isAdmin) {
       return;
     }
+
+    const tableKey = getTableKey(activeProfileId, selectedDayKey);
+    tableEditVersionsRef.current[tableKey] =
+      (tableEditVersionsRef.current[tableKey] ?? 0) + 1;
 
     setTablesByProfile((currentTables) => {
       const currentRows =
@@ -508,6 +526,10 @@ export function JobApplicationTable({
     if (!activeProfileId || !selectedDayKey || !copiedTable) {
       return;
     }
+
+    const tableKey = getTableKey(activeProfileId, selectedDayKey);
+    tableEditVersionsRef.current[tableKey] =
+      (tableEditVersionsRef.current[tableKey] ?? 0) + 1;
 
     const columnsToPaste = copiedTable.columns;
 
@@ -568,6 +590,10 @@ export function JobApplicationTable({
       return;
     }
 
+    const tableKey = getTableKey(activeProfileId, selectedDayKey);
+    tableEditVersionsRef.current[tableKey] =
+      (tableEditVersionsRef.current[tableKey] ?? 0) + 1;
+
     setTablesByProfile((currentTables) => ({
       ...currentTables,
       [activeProfileId]: {
@@ -575,6 +601,47 @@ export function JobApplicationTable({
         [selectedDayKey]: createInitialRows().map((row) => ({ ...row })),
       },
     }));
+  };
+
+  const persistStackOptions = async (
+    nextStacks: string[],
+    successMessage: string,
+    previousStacks: string[],
+  ) => {
+    try {
+      const response = await fetch("/api/job-application-settings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          stacks: nextStacks,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Unable to save stacks.");
+      }
+
+      const data = (await response.json()) as { stacks?: string[] };
+
+      if (Array.isArray(data.stacks)) {
+        setCustomStackOptions(data.stacks);
+      }
+
+      setStackMessage(successMessage);
+      window.setTimeout(() => {
+        setStackMessage((current) => (current === successMessage ? "" : current));
+      }, 1500);
+    } catch {
+      setCustomStackOptions(previousStacks);
+      setStackMessage("Unable to save stacks.");
+      window.setTimeout(() => {
+        setStackMessage((current) =>
+          current === "Unable to save stacks." ? "" : current,
+        );
+      }, 2000);
+    }
   };
 
   const addStackOption = () => {
@@ -586,7 +653,7 @@ export function JobApplicationTable({
     }
 
     if (
-      managedStackOptions.some(
+      customStackOptions.some(
         (option) => option.toLowerCase() === normalizedValue.toLowerCase(),
       )
     ) {
@@ -599,12 +666,8 @@ export function JobApplicationTable({
     );
 
     setCustomStackOptions(nextCustomStacks);
-    storeCustomStacks(nextCustomStacks);
     setNewStackName("");
-    setStackMessage("Stack added.");
-    window.setTimeout(() => {
-      setStackMessage((current) => (current === "Stack added." ? "" : current));
-    }, 1500);
+    void persistStackOptions(nextCustomStacks, "Stack added.", customStackOptions);
   };
 
   const removeStackOption = (stackName: string) => {
@@ -614,11 +677,7 @@ export function JobApplicationTable({
 
     const nextCustomStacks = customStackOptions.filter((option) => option !== stackName);
     setCustomStackOptions(nextCustomStacks);
-    storeCustomStacks(nextCustomStacks);
-    setStackMessage("Stack removed.");
-    window.setTimeout(() => {
-      setStackMessage((current) => (current === "Stack removed." ? "" : current));
-    }, 1500);
+    void persistStackOptions(nextCustomStacks, "Stack removed.", customStackOptions);
   };
 
   const rows = activeRows;
@@ -994,7 +1053,7 @@ export function JobApplicationTable({
       <div className="min-w-0">
         <div className="min-w-0">
           <datalist id="job-application-stack-options">
-            {managedStackOptions.map((option) => (
+            {customStackOptions.map((option) => (
               <option key={option} value={option} />
             ))}
           </datalist>
@@ -1179,7 +1238,7 @@ export function JobApplicationTable({
                             return;
                           }
 
-                          if (!managedStackOptions.some((option) => option === nextValue)) {
+                          if (!customStackOptions.some((option) => option === nextValue)) {
                             updateRow(
                               activeProfileId,
                               selectedDayKey,
@@ -1311,7 +1370,7 @@ export function JobApplicationTable({
                   ? "absolute right-4 top-4"
                   : "relative"
               } z-20 ml-auto flex h-[56px] w-[56px] items-center justify-center text-[color:var(--accent)] transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                isToolsSidebarOpen ? "translate-x-0" : "hover:-translate-x-1"
+                isToolsSidebarOpen ? "translate-x-0" : ""
               }`}
               aria-expanded={isToolsSidebarOpen}
               aria-controls="job-application-tools-sidebar"
@@ -1497,7 +1556,7 @@ export function JobApplicationTable({
                       <div className="text-xs text-[color:var(--muted)]">{stackMessage}</div>
                     ) : null}
                     <div className="grid gap-2">
-                      {managedStackOptions.map((option) => {
+                      {customStackOptions.map((option) => {
                         return (
                           <div
                             key={option}
@@ -1709,45 +1768,6 @@ function getStoredCopiedTable() {
     window.localStorage.removeItem(tableCopyStorageKey);
     return null;
   }
-}
-
-function getStoredCustomStacks() {
-  if (typeof window === "undefined") {
-    return [];
-  }
-
-  const raw = window.localStorage.getItem(customStackOptionsStorageKey);
-
-  if (!raw) {
-    return [...stackOptions];
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-
-    if (!Array.isArray(parsed)) {
-      return [...stackOptions];
-    }
-
-    return parsed
-      .filter((value): value is string => typeof value === "string")
-      .map((value) => value.trim())
-      .filter(Boolean);
-  } catch {
-    window.localStorage.removeItem(customStackOptionsStorageKey);
-    return [...stackOptions];
-  }
-}
-
-function storeCustomStacks(values: string[]) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(
-    customStackOptionsStorageKey,
-    JSON.stringify(values),
-  );
 }
 
 function queueSave(

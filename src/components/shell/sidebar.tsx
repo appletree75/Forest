@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -12,16 +12,17 @@ type SidebarProps = {
   permissions: PermissionKey[];
 };
 
+const SIDEBAR_STORAGE_KEY = "nex_sidebar_collapsed";
+const SIDEBAR_EVENT_NAME = "nex-sidebar-collapse-change";
+
 export function Sidebar({ user, permissions }: SidebarProps) {
   const pathname = usePathname();
   const [pendingHref, setPendingHref] = useState("");
-  const [isCollapsed, setIsCollapsed] = useState(() => {
-    if (typeof window === "undefined") {
-      return false;
-    }
-
-    return window.localStorage.getItem("nex_sidebar_collapsed") === "true";
-  });
+  const isCollapsed = useSyncExternalStore(
+    subscribeToSidebarPreference,
+    getSidebarPreferenceSnapshot,
+    () => false,
+  );
 
   useEffect(() => {
     if (pendingHref !== pathname) {
@@ -60,11 +61,8 @@ export function Sidebar({ user, permissions }: SidebarProps) {
           type="button"
           onClick={() => {
             const nextValue = !isCollapsed;
-            setIsCollapsed(nextValue);
-            window.localStorage.setItem(
-              "nex_sidebar_collapsed",
-              String(nextValue),
-            );
+            window.localStorage.setItem(SIDEBAR_STORAGE_KEY, String(nextValue));
+            window.dispatchEvent(new Event(SIDEBAR_EVENT_NAME));
           }}
           className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border)] bg-white text-[color:var(--muted)] transition-colors hover:bg-[color:var(--accent-soft)]"
           aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -168,6 +166,20 @@ export function Sidebar({ user, permissions }: SidebarProps) {
       </nav>
     </aside>
   );
+}
+
+function subscribeToSidebarPreference(onStoreChange: () => void) {
+  window.addEventListener("storage", onStoreChange);
+  window.addEventListener(SIDEBAR_EVENT_NAME, onStoreChange);
+
+  return () => {
+    window.removeEventListener("storage", onStoreChange);
+    window.removeEventListener(SIDEBAR_EVENT_NAME, onStoreChange);
+  };
+}
+
+function getSidebarPreferenceSnapshot() {
+  return window.localStorage.getItem(SIDEBAR_STORAGE_KEY) === "true";
 }
 
 function SidebarIcon({ icon }: { icon: string }) {
