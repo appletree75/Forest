@@ -1,28 +1,17 @@
 import { unstable_cache } from "next/cache";
 
 import { defaultPermissionMatrix } from "@/lib/permission-config";
+import { isDatabaseUnavailable } from "@/lib/database";
 import {
-  ensureDatabaseConnected,
-  getSettingsId,
-  isDatabaseUnavailable,
-} from "@/lib/database";
-import { prisma } from "@/lib/prisma";
+  getAppSettingsRow,
+  updateAppSettingsPermissionMatrix,
+} from "@/lib/app-settings";
 import type { PermissionMatrix } from "@/lib/types";
 
 const getCachedPermissionMatrix = unstable_cache(
   async (): Promise<PermissionMatrix> => {
     try {
-      await ensureDatabaseConnected();
-
-      const settings = await prisma.appSettings.findUnique({
-        where: { id: getSettingsId() },
-        select: { permissionMatrix: true },
-      });
-
-      if (!settings) {
-        return defaultPermissionMatrix;
-      }
-
+      const settings = await getAppSettingsRow();
       const parsed = settings.permissionMatrix as Partial<PermissionMatrix> | null;
 
       return {
@@ -48,14 +37,7 @@ export async function getPermissionMatrix() {
 }
 
 export async function setPermissionMatrix(matrix: PermissionMatrix) {
-  await ensureDatabaseConnected();
-
-  await prisma.appSettings.update({
-    where: { id: getSettingsId() },
-    data: {
-      permissionMatrix: matrix,
-    },
-  });
+  await updateAppSettingsPermissionMatrix(matrix as unknown as Record<string, unknown>);
 }
 
 export {

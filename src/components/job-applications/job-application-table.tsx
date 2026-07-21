@@ -1,6 +1,8 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import {
   createBlankRow,
@@ -51,6 +53,16 @@ type JobApplicationSearchResult = {
   stack: string;
   description: string;
   status: ApplicationStatus | null;
+};
+
+type ResumeBuilderResponse = {
+  result?: string;
+  message?: string;
+  resumeId?: string;
+  openUrl?: string;
+  previewUrl?: string;
+  downloadUrl?: string;
+  flowCvDraft?: unknown;
 };
 
 type JobApplicationTableProps = {
@@ -117,6 +129,22 @@ export function JobApplicationTable({
   const [searchResults, setSearchResults] = useState<JobApplicationSearchResult[]>([]);
   const [searchState, setSearchState] = useState<"idle" | "loading" | "error">("idle");
   const [copiedSearchResultKey, setCopiedSearchResultKey] = useState("");
+  const [isResumeBuilderOpen, setIsResumeBuilderOpen] = useState(false);
+  const [resumeBuilderJd, setResumeBuilderJd] = useState("");
+  const [resumeBuilderBaseResume, setResumeBuilderBaseResume] = useState("");
+  const [resumeBuilderInstructions, setResumeBuilderInstructions] = useState("");
+  const [resumeBuilderResult, setResumeBuilderResult] = useState("");
+  const [resumeBuilderLoading, setResumeBuilderLoading] = useState(false);
+  const [resumeBuilderFlowCvLoading, setResumeBuilderFlowCvLoading] =
+    useState(false);
+  const [resumeBuilderError, setResumeBuilderError] = useState("");
+  const [resumeBuilderCopied, setResumeBuilderCopied] = useState(false);
+  const [resumeBuilderFlowCvOpenUrl, setResumeBuilderFlowCvOpenUrl] =
+    useState("");
+  const [resumeBuilderFlowCvPreviewUrl, setResumeBuilderFlowCvPreviewUrl] =
+    useState("");
+  const [resumeBuilderFlowCvDownloadUrl, setResumeBuilderFlowCvDownloadUrl] =
+    useState("");
   const [tablesByProfile, setTablesByProfile] =
     useState<JobApplicationTables>(initialTables);
   const filteredProfiles = getFilteredProfiles(
@@ -749,6 +777,130 @@ export function JobApplicationTable({
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
+  const openResumeBuilder = () => {
+    setResumeBuilderError("");
+    setResumeBuilderCopied(false);
+    setResumeBuilderFlowCvOpenUrl("");
+    setResumeBuilderFlowCvPreviewUrl("");
+    setResumeBuilderFlowCvDownloadUrl("");
+    setIsResumeBuilderOpen(true);
+  };
+
+  const closeResumeBuilder = () => {
+    if (resumeBuilderLoading || resumeBuilderFlowCvLoading) {
+      return;
+    }
+
+    setIsResumeBuilderOpen(false);
+  };
+
+  const generateTailoredResume = async () => {
+    const jd = resumeBuilderJd.trim();
+    const baseResume = resumeBuilderBaseResume.trim();
+
+    if (!jd || !baseResume) {
+      setResumeBuilderError("JD and basic resume are required.");
+      return;
+    }
+
+    setResumeBuilderLoading(true);
+    setResumeBuilderError("");
+    setResumeBuilderCopied(false);
+
+    try {
+      const response = await fetch("/api/job-application-resume-builder", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          profileName: activeProfile?.fullName ?? "",
+          jd: resumeBuilderJd,
+          baseResume: resumeBuilderBaseResume,
+          instructions: resumeBuilderInstructions,
+        }),
+      });
+
+      const data = (await response.json()) as ResumeBuilderResponse;
+
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to build resume.");
+      }
+
+      setResumeBuilderResult(data.result || "");
+    } catch (error) {
+      setResumeBuilderError(
+        error instanceof Error ? error.message : "Unable to build resume.",
+      );
+    } finally {
+      setResumeBuilderLoading(false);
+    }
+  };
+
+  const copyResumeBuilderResult = async () => {
+    if (!resumeBuilderResult.trim()) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(resumeBuilderResult);
+    setResumeBuilderCopied(true);
+    window.setTimeout(() => {
+      setResumeBuilderCopied(false);
+    }, 1500);
+  };
+
+  const buildResumeInFlowCv = async () => {
+    const jd = resumeBuilderJd.trim();
+    const baseResume = resumeBuilderBaseResume.trim();
+
+    if (!jd || !baseResume) {
+      setResumeBuilderError("JD and basic resume are required.");
+      return;
+    }
+
+    setResumeBuilderFlowCvLoading(true);
+    setResumeBuilderError("");
+    setResumeBuilderCopied(false);
+
+    try {
+      const response = await fetch("/api/job-application-flowcv", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          profileName: activeProfile?.fullName ?? "",
+          jd: resumeBuilderJd,
+          baseResume: resumeBuilderBaseResume,
+          instructions: resumeBuilderInstructions,
+          tailoredResume: resumeBuilderResult.trim(),
+        }),
+      });
+
+      const data = (await response.json()) as ResumeBuilderResponse;
+
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to create a FlowCV resume.");
+      }
+
+      if (data.result) {
+        setResumeBuilderResult(data.result);
+      }
+
+      setResumeBuilderFlowCvOpenUrl(data.openUrl || "");
+      setResumeBuilderFlowCvPreviewUrl(data.previewUrl || data.openUrl || "");
+      setResumeBuilderFlowCvDownloadUrl(data.downloadUrl || "");
+    } catch (error) {
+      setResumeBuilderError(
+        error instanceof Error
+          ? error.message
+          : "Unable to create a FlowCV resume.",
+      );
+    } finally {
+      setResumeBuilderFlowCvLoading(false);
+    }
+  };
+
   if (profiles.length === 0) {
     return (
       <section className="rounded-[32px] border border-[var(--border)] bg-[color:var(--panel-strong)] p-6 shadow-[0_16px_50px_rgba(24,34,24,0.06)]">
@@ -766,28 +918,37 @@ export function JobApplicationTable({
       <div className="mb-6">
         <div className="flex items-center justify-between gap-4">
           <h2 className="text-xl font-semibold">Application Table</h2>
-          <div
-            className={`rounded-full px-3 py-1 text-xs font-semibold ${
-              saveState === "saving"
-                ? "bg-amber-50 text-amber-700"
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={openResumeBuilder}
+              className="h-9 rounded-full border border-[var(--border)] bg-white px-4 text-sm font-semibold transition-colors hover:bg-[color:var(--background)]"
+            >
+              Resume Builder
+            </button>
+            <div
+              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                saveState === "saving"
+                  ? "bg-amber-50 text-amber-700"
+                  : saveState === "saved"
+                    ? "bg-emerald-50 text-emerald-700"
+                    : saveState === "conflict"
+                      ? "bg-rose-50 text-rose-700"
+                      : saveState === "error"
+                        ? "bg-slate-100 text-slate-700"
+                        : "bg-white text-[color:var(--muted)]"
+              }`}
+            >
+              {saveState === "saving"
+                ? "Saving..."
                 : saveState === "saved"
-                  ? "bg-emerald-50 text-emerald-700"
+                  ? "Saved"
                   : saveState === "conflict"
-                    ? "bg-rose-50 text-rose-700"
+                    ? "Refresh required"
                     : saveState === "error"
-                      ? "bg-slate-100 text-slate-700"
-                      : "bg-white text-[color:var(--muted)]"
-            }`}
-          >
-            {saveState === "saving"
-              ? "Saving..."
-              : saveState === "saved"
-                ? "Saved"
-                : saveState === "conflict"
-                  ? "Refresh required"
-                  : saveState === "error"
-                    ? "Save failed"
-                    : "Idle"}
+                      ? "Save failed"
+                      : "Idle"}
+            </div>
           </div>
         </div>
       </div>
@@ -1644,7 +1805,327 @@ export function JobApplicationTable({
           </div>
         </aside>
       ) : null}
+
+      {isResumeBuilderOpen ? (
+        <ResumeBuilderViewportShell
+          title="Resume Builder"
+          onClose={closeResumeBuilder}
+        >
+          <div className="grid gap-5 lg:min-h-0 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+            <div className="grid gap-5 lg:min-h-0 lg:grid-rows-[minmax(0,1fr)_auto]">
+              <div className="rounded-[26px] border border-[rgba(35,68,43,0.12)] bg-[linear-gradient(180deg,rgba(240,246,236,0.9),rgba(255,255,255,0.98))] p-5 shadow-[0_18px_50px_rgba(24,34,24,0.06)]">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.24em] text-[color:var(--muted)]">
+                      Input
+                    </div>
+                    <p className="mt-1 text-sm text-[color:var(--muted)]">
+                      Paste the target JD and the current resume first.
+                    </p>
+                  </div>
+                  <div className="rounded-full border border-[rgba(35,68,43,0.12)] bg-white px-3 py-1 text-xs font-semibold text-[color:var(--accent)]">
+                    ATS Tailoring
+                  </div>
+                </div>
+
+                <div className="grid gap-4">
+                  <div className="grid gap-2">
+              <label
+                htmlFor="resume-builder-jd"
+                className="text-sm font-semibold text-[color:var(--foreground)]"
+              >
+                JD
+              </label>
+              <textarea
+                id="resume-builder-jd"
+                value={resumeBuilderJd}
+                onChange={(event) => setResumeBuilderJd(event.target.value)}
+                rows={7}
+                className="w-full rounded-[22px] border border-[var(--border)] bg-white px-4 py-3 text-sm leading-6 outline-none transition-shadow focus:border-[rgba(35,68,43,0.35)] focus:shadow-[0_0_0_4px_rgba(35,68,43,0.08)]"
+                placeholder="Paste the job description here..."
+              />
+                  </div>
+
+                  <div className="grid gap-2">
+              <label
+                htmlFor="resume-builder-base-resume"
+                className="text-sm font-semibold text-[color:var(--foreground)]"
+              >
+                Existing / Basic Resume
+              </label>
+              <textarea
+                id="resume-builder-base-resume"
+                value={resumeBuilderBaseResume}
+                onChange={(event) => setResumeBuilderBaseResume(event.target.value)}
+                rows={8}
+                className="w-full rounded-[22px] border border-[var(--border)] bg-white px-4 py-3 text-sm leading-6 outline-none transition-shadow focus:border-[rgba(35,68,43,0.35)] focus:shadow-[0_0_0_4px_rgba(35,68,43,0.08)]"
+                placeholder="Paste the current resume content here..."
+              />
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-[26px] border border-[rgba(35,68,43,0.12)] bg-white p-5 shadow-[0_18px_50px_rgba(24,34,24,0.05)]">
+                <div className="mb-3 text-xs font-semibold uppercase tracking-[0.24em] text-[color:var(--muted)]">
+                  Special Instructions
+                </div>
+                <textarea
+                  id="resume-builder-instructions"
+                  value={resumeBuilderInstructions}
+                  onChange={(event) =>
+                    setResumeBuilderInstructions(event.target.value)
+                  }
+                  rows={6}
+                  className="w-full rounded-[22px] border border-[var(--border)] bg-[color:var(--background)] px-4 py-3 text-sm leading-6 outline-none transition-shadow focus:border-[rgba(35,68,43,0.35)] focus:shadow-[0_0_0_4px_rgba(35,68,43,0.08)]"
+                  placeholder="Add tailoring instructions, target focus, keywords, or formatting notes..."
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-5 lg:min-h-0 lg:grid-rows-[minmax(0,1fr)_auto]">
+              <div className="rounded-[26px] border border-[rgba(35,68,43,0.12)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(239,246,241,0.9))] p-5 shadow-[0_18px_50px_rgba(24,34,24,0.06)]">
+                <div className="mb-4 flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.24em] text-[color:var(--muted)]">
+                      Output
+                    </div>
+                    <p className="mt-1 text-sm text-[color:var(--muted)]">
+                      Generate a tailored version, then review and copy it.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void copyResumeBuilderResult()}
+                    disabled={!resumeBuilderResult.trim()}
+                    className="h-9 rounded-full border border-[var(--border)] bg-white px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:text-slate-400"
+                  >
+                    {resumeBuilderCopied ? "Copied" : "Copy"}
+                  </button>
+                </div>
+
+                {resumeBuilderFlowCvPreviewUrl ||
+                resumeBuilderFlowCvOpenUrl ||
+                resumeBuilderFlowCvDownloadUrl ? (
+                  <div className="mb-4 flex flex-wrap gap-2">
+                    {resumeBuilderFlowCvPreviewUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => openUrl(resumeBuilderFlowCvPreviewUrl)}
+                        className="h-9 rounded-full border border-[var(--border)] bg-white px-4 text-sm font-semibold transition-colors hover:bg-[color:var(--background)]"
+                      >
+                        Preview
+                      </button>
+                    ) : null}
+                    {resumeBuilderFlowCvOpenUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => openUrl(resumeBuilderFlowCvOpenUrl)}
+                        className="h-9 rounded-full border border-[var(--border)] bg-white px-4 text-sm font-semibold transition-colors hover:bg-[color:var(--background)]"
+                      >
+                        Open in FlowCV
+                      </button>
+                    ) : null}
+                    {resumeBuilderFlowCvDownloadUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => openUrl(resumeBuilderFlowCvDownloadUrl)}
+                        className="h-9 rounded-full border border-[var(--border)] bg-white px-4 text-sm font-semibold transition-colors hover:bg-[color:var(--background)]"
+                      >
+                        Download PDF
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {resumeBuilderError ? (
+                  <div className="mb-4 rounded-[18px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                    {resumeBuilderError}
+                  </div>
+                ) : null}
+
+                <textarea
+                  id="resume-builder-result"
+                  value={resumeBuilderResult}
+                  onChange={(event) => setResumeBuilderResult(event.target.value)}
+                  rows={16}
+                  className="min-h-[320px] w-full rounded-[24px] border border-[var(--border)] bg-white px-4 py-4 text-sm leading-6 outline-none transition-shadow focus:border-[rgba(35,68,43,0.35)] focus:shadow-[0_0_0_4px_rgba(35,68,43,0.08)] lg:min-h-[460px]"
+                  placeholder="Generated tailored resume will appear here..."
+                />
+              </div>
+
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={closeResumeBuilder}
+                  disabled={resumeBuilderLoading}
+                  className="h-11 rounded-2xl border border-[var(--border)] bg-white px-5 text-sm font-semibold disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void buildResumeInFlowCv()}
+                  disabled={resumeBuilderLoading || resumeBuilderFlowCvLoading}
+                  className="flex h-11 min-w-[168px] items-center justify-center rounded-2xl border border-[var(--border)] bg-white px-5 text-sm font-semibold disabled:opacity-70"
+                >
+                  {resumeBuilderFlowCvLoading ? (
+                    <span className="inline-flex items-center gap-2">
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-[color:var(--accent)]/40 border-t-[color:var(--accent)]" />
+                      Creating...
+                    </span>
+                  ) : (
+                    "Use FlowCV"
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void generateTailoredResume()}
+                  disabled={resumeBuilderLoading || resumeBuilderFlowCvLoading}
+                  className="flex h-11 min-w-[168px] items-center justify-center rounded-2xl bg-[color:var(--accent)] px-5 text-sm font-semibold text-white disabled:opacity-70"
+                >
+                  {resumeBuilderLoading ? (
+                    <span className="inline-flex items-center gap-2">
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/70 border-t-transparent" />
+                      Building...
+                    </span>
+                  ) : (
+                    "Build Resume"
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </ResumeBuilderViewportShell>
+      ) : null}
     </section>
+  );
+}
+
+function ModalShell({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(18,26,19,0.4)] p-4">
+      <div className="w-full max-w-4xl rounded-[30px] border border-[rgba(28,82,54,0.12)] bg-white p-5 shadow-[0_24px_80px_rgba(18,26,19,0.18)]">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">
+              Resume Builder
+            </div>
+            <h3 className="mt-2 text-2xl font-semibold">{title}</h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-[var(--border)] bg-[color:var(--background)] text-[color:var(--muted)] transition-colors hover:bg-white"
+          >
+            ×
+          </button>
+        </div>
+        <div className="mt-5">{children}</div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function ResumeBuilderModalShell({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(16,24,18,0.52)] p-4 backdrop-blur-[6px]">
+      <div className="w-full max-w-7xl rounded-[34px] border border-[rgba(28,82,54,0.14)] bg-[linear-gradient(180deg,rgba(252,253,249,0.98),rgba(255,255,255,1))] p-6 shadow-[0_36px_120px_rgba(18,26,19,0.24)]">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">
+              Resume Builder
+            </div>
+            <h3 className="mt-2 text-[28px] font-semibold leading-tight">
+              {title}
+            </h3>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:var(--muted)]">
+              Tailor a base resume against a target job description and produce
+              a recruiter-ready version quickly.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-full border border-[var(--border)] bg-[color:var(--background)] text-lg text-[color:var(--muted)] transition-colors hover:bg-white"
+          >
+            ×
+          </button>
+        </div>
+        <div className="mt-6">{children}</div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function ResumeBuilderViewportShell({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(16,24,18,0.52)] p-4 backdrop-blur-[6px]">
+      <div className="flex max-h-[calc(100vh-32px)] w-full max-w-7xl flex-col overflow-hidden rounded-[34px] border border-[rgba(28,82,54,0.14)] bg-[linear-gradient(180deg,rgba(252,253,249,0.98),rgba(255,255,255,1))] shadow-[0_36px_120px_rgba(18,26,19,0.24)]">
+        <div className="shrink-0 p-6 pb-0">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">
+                Resume Builder
+              </div>
+              <h3 className="mt-2 text-[28px] font-semibold leading-tight">
+                {title}
+              </h3>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:var(--muted)]">
+                Tailor a base resume against a target job description and produce
+                a recruiter-ready version quickly.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-full border border-[var(--border)] bg-[color:var(--background)] text-lg text-[color:var(--muted)] transition-colors hover:bg-white"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-6 pt-6">{children}</div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 

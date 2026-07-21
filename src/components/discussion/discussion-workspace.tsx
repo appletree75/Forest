@@ -98,19 +98,64 @@ export function DiscussionWorkspace({
     () => rooms.find((room) => room.id === effectiveSelectedRoomId) ?? null,
     [effectiveSelectedRoomId, rooms],
   );
+  const selectedRoomMessages = useMemo(
+    () => messagesByRoom[effectiveSelectedRoomId] ?? [],
+    [effectiveSelectedRoomId, messagesByRoom],
+  );
   const selectedRoomMembers = useMemo(() => {
     if (!selectedRoom) {
       return [];
     }
 
-    return selectedRoom.members.map((member) => {
-      const linkedUser = users.find((user) => user.id === member.id);
-      return {
-        id: member.id,
-        name: linkedUser?.name ?? member.name,
-      };
+    const members = new Map<string, { id: string; name: string }>();
+
+    selectedRoom.members.forEach((member) => {
+      if (member.id && member.name) {
+        members.set(member.id, {
+          id: member.id,
+          name: member.name,
+        });
+      }
     });
-  }, [selectedRoom, users]);
+
+    selectedRoom.memberUserIds.forEach((memberUserId) => {
+      if (members.has(memberUserId)) {
+        return;
+      }
+
+      const matchedUser = users.find((user) => user.id === memberUserId);
+
+      if (matchedUser) {
+        members.set(memberUserId, {
+          id: matchedUser.id,
+          name: matchedUser.name,
+        });
+        return;
+      }
+
+      const matchedMessageAuthor = selectedRoomMessages.find(
+        (message) => message.userId === memberUserId,
+      );
+
+      members.set(memberUserId, {
+        id: memberUserId,
+        name: matchedMessageAuthor?.userName || "Member",
+      });
+    });
+
+    if (members.size === 0) {
+      selectedRoomMessages.forEach((message) => {
+        if (!members.has(message.userId)) {
+          members.set(message.userId, {
+            id: message.userId,
+            name: message.userName,
+          });
+        }
+      });
+    }
+
+    return Array.from(members.values());
+  }, [selectedRoom, selectedRoomMessages, users]);
   const filteredRooms = useMemo(() => {
     const keyword = roomSearch.trim().toLowerCase();
 
@@ -120,10 +165,7 @@ export function DiscussionWorkspace({
 
     return rooms.filter((room) => room.name.toLowerCase().includes(keyword));
   }, [roomSearch, rooms]);
-  const messages = useMemo(
-    () => messagesByRoom[effectiveSelectedRoomId] ?? [],
-    [effectiveSelectedRoomId, messagesByRoom],
-  );
+  const messages = selectedRoomMessages;
 
   useEffect(() => {
     if (!effectiveSelectedRoomId) {
@@ -255,7 +297,33 @@ export function DiscussionWorkspace({
           return current;
         }
 
-        return nextRooms;
+        const currentRoomsById = new Map(current.map((room) => [room.id, room]));
+
+        return nextRooms.map((room) => {
+          const previousRoom = currentRoomsById.get(room.id);
+
+          if (!previousRoom) {
+            return room;
+          }
+
+          return {
+            ...room,
+            memberUserIds:
+              room.memberUserIds.length === 0 &&
+              previousRoom.memberUserIds.length > 0
+                ? previousRoom.memberUserIds
+                : room.memberUserIds,
+            members:
+              room.members.length === 0 && previousRoom.members.length > 0
+                ? previousRoom.members
+                : room.members,
+            activeUserIds:
+              room.activeUserIds.length === 0 &&
+              previousRoom.activeUserIds.length > 0
+                ? previousRoom.activeUserIds
+                : room.activeUserIds,
+          };
+        });
       });
     };
 
@@ -781,39 +849,37 @@ export function DiscussionWorkspace({
                 <h2 className="truncate text-[22px] font-semibold text-[#213025]">
                   {selectedRoom.name}
                 </h2>
-                <div className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-[#748375]">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {selectedRoomMembers.map((user) => {
-                      const tone = getAvatarTone(user.name);
-                      const isJoined = selectedRoom.activeUserIds.includes(user.id);
-                      return (
-                        <div
-                          key={user.id}
-                          className="flex items-center gap-1.5 rounded-full border border-[#d8e4d8] bg-white px-2 py-1"
-                        >
-                          <div
-                            className="flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-semibold text-white"
-                            style={{ backgroundColor: tone }}
-                          >
-                            {getInitials(user.name)}
-                          </div>
-                          <span className="max-w-[100px] truncate text-xs font-medium text-[#355142]">
-                            {user.name}
-                          </span>
-                          <span
-                            className={`h-2 w-2 rounded-full ${
-                              isJoined ? "bg-emerald-500" : "bg-slate-300"
-                            }`}
-                            aria-label={isJoined ? "Joined" : "Not joined"}
-                            title={isJoined ? "Joined" : "Not joined"}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
               </div>
-              <div className="flex shrink-0 items-start">
+              <div className="flex shrink-0 items-start gap-2">
+                <div className="flex flex-wrap items-center justify-end gap-1.5">
+                  {selectedRoomMembers.map((user) => {
+                    const tone = getAvatarTone(user.name);
+                    const isJoined = selectedRoom.activeUserIds.includes(user.id);
+                    return (
+                      <div
+                        key={user.id}
+                        className="flex items-center gap-1.5 rounded-full border border-[#d8e4d8] bg-white px-2 py-1"
+                      >
+                        <div
+                          className="flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-semibold text-white"
+                          style={{ backgroundColor: tone }}
+                        >
+                          {getInitials(user.name)}
+                        </div>
+                        <span className="max-w-[100px] truncate text-xs font-medium text-[#355142]">
+                          {user.name}
+                        </span>
+                        <span
+                          className={`h-2 w-2 rounded-full ${
+                            isJoined ? "bg-emerald-500" : "bg-slate-300"
+                          }`}
+                          aria-label={isJoined ? "Joined" : "Not joined"}
+                          title={isJoined ? "Joined" : "Not joined"}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
                 <div className="relative flex items-center">
                 <button
                   type="button"

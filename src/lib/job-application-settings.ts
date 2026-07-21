@@ -1,26 +1,18 @@
 import { revalidateTag, unstable_cache } from "next/cache";
-import { Prisma } from "@prisma/client";
 
+import { ensureDatabaseConnected, getSettingsId, isDatabaseUnavailable } from "@/lib/database";
 import {
-  ensureDatabaseConnected,
-  getSettingsId,
-  isDatabaseUnavailable,
-} from "@/lib/database";
+  getAppSettingsRow,
+  updateJobApplicationStacks,
+} from "@/lib/app-settings";
 import { stackOptions } from "@/lib/job-applications";
-import { defaultPermissionMatrix } from "@/lib/permission-config";
-import { prisma } from "@/lib/prisma";
 
 const jobApplicationStacksTag = "job-application-stacks";
 
 const getCachedJobApplicationStackOptions = unstable_cache(
   async (): Promise<string[]> => {
     try {
-      await ensureDatabaseConnected();
-
-      const settings = await prisma.appSettings.findUnique({
-        where: { id: getSettingsId() },
-        select: { permissionMatrix: true },
-      });
+      const settings = await getAppSettingsRow();
 
       const parsed =
         settings?.permissionMatrix &&
@@ -50,36 +42,7 @@ export async function setJobApplicationStackOptions(values: string[]) {
   const sanitized = sanitizeStacks(values);
 
   await ensureDatabaseConnected();
-
-  const settings = await prisma.appSettings.upsert({
-    where: { id: getSettingsId() },
-    update: {},
-    create: {
-      id: getSettingsId(),
-      permissionMatrix: defaultPermissionMatrix,
-    },
-    select: { permissionMatrix: true },
-  });
-
-  const parsed =
-    settings.permissionMatrix &&
-    typeof settings.permissionMatrix === "object" &&
-    !Array.isArray(settings.permissionMatrix)
-      ? (settings.permissionMatrix as Record<string, unknown>)
-      : {};
-
-  await prisma.$executeRaw(
-    Prisma.sql`
-      UPDATE "AppSettings"
-      SET
-        "permissionMatrix" = ${JSON.stringify({
-          ...parsed,
-          jobApplicationStacks: sanitized,
-        })}::jsonb,
-        "updatedAt" = NOW()
-      WHERE "id" = ${getSettingsId()}
-    `,
-  );
+  await updateJobApplicationStacks(sanitized);
 
   revalidateTag(jobApplicationStacksTag);
 

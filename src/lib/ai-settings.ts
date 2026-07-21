@@ -41,6 +41,27 @@ function mapApiKey(row: {
   };
 }
 
+async function normalizeSelectedApiKeys() {
+  const selectedRows = await prisma.apiKeySetting.findMany({
+    where: { isSelected: true },
+    orderBy: { createdAt: "asc" },
+    select: { id: true },
+  });
+
+  if (selectedRows.length <= 1) {
+    return selectedRows[0]?.id ?? null;
+  }
+
+  const [primary, ...duplicates] = selectedRows;
+
+  await prisma.apiKeySetting.updateMany({
+    where: { id: { in: duplicates.map((row) => row.id) } },
+    data: { isSelected: false },
+  });
+
+  return primary.id;
+}
+
 export async function ensureDefaultApiKey() {
   if (!DEFAULT_DEEPSEEK_KEY) {
     return null;
@@ -48,18 +69,25 @@ export async function ensureDefaultApiKey() {
 
   await ensureDatabaseConnected();
 
+  const selectedId = await normalizeSelectedApiKeys();
+
+  const selected = selectedId
+    ? await prisma.apiKeySetting.findUnique({
+        where: { id: selectedId },
+      })
+    : null;
+
   const existing = await prisma.apiKeySetting.findFirst({
     where: { provider: DEFAULT_PROVIDER },
     orderBy: { createdAt: "asc" },
   });
 
   if (existing) {
-    if (!existing.isSelected) {
+    if (!selected) {
       await prisma.apiKeySetting.update({
         where: { id: existing.id },
         data: { isSelected: true },
       });
-      revalidateTag("api-keys");
     }
 
     return existing;
@@ -70,11 +98,10 @@ export async function ensureDefaultApiKey() {
       provider: DEFAULT_PROVIDER,
       name: DEFAULT_NAME,
       apiKey: DEFAULT_DEEPSEEK_KEY,
-      isSelected: true,
+      isSelected: !selected,
     },
   });
 
-  revalidateTag("api-keys");
   return created;
 }
 
@@ -82,12 +109,20 @@ const getCachedApiKeys = unstable_cache(
   async (): Promise<ApiKeySetting[]> => {
     try {
       await ensureDefaultApiKey();
+      const selectedId = await normalizeSelectedApiKeys();
 
       const rows = await prisma.apiKeySetting.findMany({
-        orderBy: [{ isSelected: "desc" }, { createdAt: "asc" }],
+        orderBy: [{ createdAt: "asc" }],
       });
 
-      return rows.map(mapApiKey);
+      return rows
+        .map((row) =>
+          mapApiKey({
+            ...row,
+            isSelected: selectedId != null && row.id === selectedId,
+          }),
+        )
+        .sort((left, right) => Number(right.isSelected) - Number(left.isSelected));
     } catch (error) {
       if (!isDatabaseUnavailable(error)) {
         throw error;
@@ -199,12 +234,14 @@ export async function removeApiKey(id: string) {
 export async function getSelectedApiKey() {
   try {
     await ensureDefaultApiKey();
+    const selectedId = await normalizeSelectedApiKeys();
 
     const selected =
-      (await prisma.apiKeySetting.findFirst({
-        where: { isSelected: true },
-        orderBy: { createdAt: "asc" },
-      })) ??
+      (selectedId
+        ? await prisma.apiKeySetting.findUnique({
+            where: { id: selectedId },
+          })
+        : null) ??
       (await prisma.apiKeySetting.findFirst({
         orderBy: { createdAt: "asc" },
       }));

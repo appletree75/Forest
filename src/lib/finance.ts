@@ -4,10 +4,12 @@ import { unstable_cache, revalidateTag } from "next/cache";
 
 import {
   ensureDatabaseConnected,
-  getSettingsId,
   isDatabaseUnavailable,
 } from "@/lib/database";
-import { defaultPermissionMatrix } from "@/lib/permission-config";
+import {
+  getAppSettingsRow,
+  updateFinancePasswordHash,
+} from "@/lib/app-settings";
 import { hashPassword, verifyPassword } from "@/lib/passwords";
 import { prisma } from "@/lib/prisma";
 import type { FinanceTransaction } from "@/lib/types";
@@ -90,17 +92,7 @@ export async function verifyFinancePassword(password: string) {
 
   await ensureDatabaseConnected();
 
-  const settings = await prisma.appSettings.upsert({
-    where: { id: getSettingsId() },
-    update: {},
-    create: {
-      id: getSettingsId(),
-      permissionMatrix: defaultPermissionMatrix,
-    },
-    select: {
-      financePasswordHash: true,
-    },
-  });
+  const settings = await getAppSettingsRow();
 
   if (settings.financePasswordHash) {
     return verifyPassword(normalizedPassword, settings.financePasswordHash);
@@ -115,22 +107,7 @@ export async function verifyFinancePassword(password: string) {
 export async function setFinancePassword(password: string) {
   const normalizedPassword = password.trim();
 
-  await ensureDatabaseConnected();
-
-  await prisma.appSettings.upsert({
-    where: { id: getSettingsId() },
-    update: {
-      financePasswordHash: hashPassword(normalizedPassword),
-    },
-    create: {
-      id: getSettingsId(),
-      permissionMatrix: defaultPermissionMatrix,
-      financePasswordHash: hashPassword(normalizedPassword),
-    },
-    select: {
-      id: true,
-    },
-  });
+  await updateFinancePasswordHash(hashPassword(normalizedPassword));
 }
 
 function sanitizeAmount(value: unknown) {
