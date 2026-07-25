@@ -16,14 +16,43 @@ type FlowCvResumeRequest = {
   tailoredResume?: string;
 };
 
-export async function POST(request: Request) {
-  const user = await getSessionUser();
+function toDetailedErrorMessage(error: unknown, fallbackMessage: string) {
+  if (error instanceof Error) {
+    const stackLine = error.stack
+      ?.split("\n")
+      .map((line) => line.trim())
+      .find((line) => line && line !== error.message);
 
-  if (!user) {
-    return NextResponse.json({ message: "Unauthorized." }, { status: 401 });
+    return stackLine ? `${error.message}\n${stackLine}` : error.message;
   }
 
+  if (typeof error === "string" && error.trim()) {
+    return error.trim();
+  }
+
+  return fallbackMessage;
+}
+
+async function runFlowCvStep<T>(label: string, action: () => Promise<T>) {
   try {
+    return await action();
+  } catch (error) {
+    const message = toDetailedErrorMessage(
+      error,
+      `${label} failed.`,
+    );
+    throw new Error(`${label} failed: ${message}`);
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const user = await getSessionUser();
+
+    if (!user) {
+      return NextResponse.json({ message: "Unauthorized." }, { status: 401 });
+    }
+
     const body = (await request.json()) as FlowCvResumeRequest;
     const profileName = body.profileName?.trim() || "";
     const jd = body.jd?.trim() || "";
@@ -31,25 +60,35 @@ export async function POST(request: Request) {
     const instructions = body.instructions?.trim() || "";
     const tailoredResume =
       body.tailoredResume?.trim() ||
-      (await buildTailoredResume({
+      (await runFlowCvStep("Resume tailoring", () =>
+        buildTailoredResume({
+          profileName,
+          jd,
+          baseResume,
+          instructions,
+        }),
+      ));
+
+    const flowCvDraft = await runFlowCvStep("FlowCV draft build", async () =>
+      buildFlowCvDraft({
         profileName,
         jd,
+        tailoredResume,
         baseResume,
         instructions,
-      }));
+      }),
+    );
 
-    const flowCvDraft = buildFlowCvDraft({
-      profileName,
-      jd,
-      tailoredResume,
-      baseResume,
-      instructions,
-    });
+    const flowCvResume = await runFlowCvStep("FlowCV resume create", () =>
+      createFlowCvResumeFromDraft({
+        draft: flowCvDraft,
+        profileName,
+      }),
+    );
 
-    const flowCvResume = await createFlowCvResumeFromDraft({
-      draft: flowCvDraft,
-      profileName,
-    });
+    if (!flowCvResume.resumeId?.trim()) {
+      throw new Error("FlowCV did not return a valid resume id.");
+    }
 
     return NextResponse.json({
       ok: true,
@@ -61,12 +100,14 @@ export async function POST(request: Request) {
       downloadUrl: `/api/job-application-flowcv?resumeId=${encodeURIComponent(flowCvResume.resumeId)}`,
     });
   } catch (error) {
+    console.error("job-application-flowcv POST failed", error);
+
     return NextResponse.json(
       {
-        message:
-          error instanceof Error
-            ? error.message
-            : "Unable to create a FlowCV resume.",
+        message: toDetailedErrorMessage(
+          error,
+          "Unable to create a FlowCV resume.",
+        ),
       },
       { status: 500 },
     );
@@ -74,24 +115,26 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  const user = await getSessionUser();
-
-  if (!user) {
-    return NextResponse.json({ message: "Unauthorized." }, { status: 401 });
-  }
-
-  const { searchParams } = new URL(request.url);
-  const resumeId = searchParams.get("resumeId")?.trim() || "";
-
-  if (!resumeId) {
-    return NextResponse.json(
-      { message: "resumeId is required." },
-      { status: 400 },
-    );
-  }
-
   try {
-    const pdf = await downloadFlowCvResumePdf(resumeId);
+    const user = await getSessionUser();
+
+    if (!user) {
+      return NextResponse.json({ message: "Unauthorized." }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const resumeId = searchParams.get("resumeId")?.trim() || "";
+
+    if (!resumeId) {
+      return NextResponse.json(
+        { message: "resumeId is required." },
+        { status: 400 },
+      );
+    }
+
+    const pdf = await runFlowCvStep("FlowCV PDF download", () =>
+      downloadFlowCvResumePdf(resumeId),
+    );
 
     return new NextResponse(pdf.buffer, {
       status: 200,
@@ -102,12 +145,14 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
+    console.error("job-application-flowcv GET failed", error);
+
     return NextResponse.json(
       {
-        message:
-          error instanceof Error
-            ? error.message
-            : "Unable to download the FlowCV PDF.",
+        message: toDetailedErrorMessage(
+          error,
+          "Unable to download the FlowCV PDF.",
+        ),
       },
       { status: 500 },
     );

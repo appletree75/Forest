@@ -6,11 +6,13 @@ import { defaultPermissionMatrix } from "@/lib/permission-config";
 
 type AppSettingsRow = {
   permissionMatrix: unknown;
+  jobApplicationStacks: unknown;
   financePasswordHash: string | null;
 };
 
 type AppSettingsQueryRow = {
   permissionMatrix: unknown;
+  jobApplicationStacks?: unknown;
   financePasswordHash?: string | null;
 };
 
@@ -40,14 +42,16 @@ export async function getAppSettingsRow(): Promise<AppSettingsRow> {
   const row = rows[0];
 
   if (!row) {
-    return {
-      permissionMatrix: defaultPermissionMatrix,
-      financePasswordHash: null,
-    };
-  }
+      return {
+        permissionMatrix: defaultPermissionMatrix,
+        jobApplicationStacks: null,
+        financePasswordHash: null,
+      };
+    }
 
   return {
     permissionMatrix: row.permissionMatrix,
+    jobApplicationStacks: row.jobApplicationStacks ?? null,
     financePasswordHash: row.financePasswordHash ?? null,
   };
 }
@@ -91,6 +95,7 @@ export async function updateFinancePasswordHash(hash: string) {
 export async function updateJobApplicationStacks(stacks: string[]) {
   await ensureAppSettingsRow();
 
+  const availableColumns = await getAppSettingsColumns();
   const current = await getAppSettingsRow();
   const parsedPermissionMatrix =
     current.permissionMatrix &&
@@ -98,6 +103,24 @@ export async function updateJobApplicationStacks(stacks: string[]) {
     !Array.isArray(current.permissionMatrix)
       ? (current.permissionMatrix as Record<string, unknown>)
       : {};
+
+  if (availableColumns.has("jobApplicationStacks")) {
+    await prisma.$executeRaw(
+      Prisma.sql`
+        UPDATE "AppSettings"
+        SET
+          "jobApplicationStacks" = ${JSON.stringify(stacks)}::jsonb,
+          "permissionMatrix" = ${JSON.stringify({
+            ...parsedPermissionMatrix,
+            jobApplicationStacks: stacks,
+          })}::jsonb,
+          "updatedAt" = NOW()
+        WHERE "id" = ${getSettingsId()}
+      `,
+    );
+
+    return;
+  }
 
   await prisma.$executeRaw(
     Prisma.sql`
@@ -128,6 +151,10 @@ async function getAppSettingsColumns() {
 
 async function readAppSettingsRow(availableColumns: Set<string>) {
   const selectParts = [`"permissionMatrix"`];
+
+  if (availableColumns.has("jobApplicationStacks")) {
+    selectParts.push(`"jobApplicationStacks"`);
+  }
 
   if (availableColumns.has("financePasswordHash")) {
     selectParts.push(`"financePasswordHash"`);

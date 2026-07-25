@@ -143,8 +143,12 @@ export function JobApplicationTable({
     useState("");
   const [resumeBuilderFlowCvPreviewUrl, setResumeBuilderFlowCvPreviewUrl] =
     useState("");
+  const [resumeBuilderFlowCvResumeId, setResumeBuilderFlowCvResumeId] =
+    useState("");
   const [resumeBuilderFlowCvDownloadUrl, setResumeBuilderFlowCvDownloadUrl] =
     useState("");
+  const [resumeBuilderErrorCopied, setResumeBuilderErrorCopied] =
+    useState(false);
   const [tablesByProfile, setTablesByProfile] =
     useState<JobApplicationTables>(initialTables);
   const filteredProfiles = getFilteredProfiles(
@@ -160,6 +164,26 @@ export function JobApplicationTable({
       : [];
   const activeProfile =
     filteredProfiles.find((profile) => profile.id === activeProfileId) ?? null;
+
+  const readErrorMessage = async (
+    response: Response,
+    fallbackMessage: string,
+  ) => {
+    const raw = await response.text();
+
+    if (!raw.trim()) {
+      return `${fallbackMessage} (${response.status})`;
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as { message?: string; error?: string };
+      const message = parsed.message?.trim() || parsed.error?.trim() || raw.trim();
+      return `${message} (${response.status})`;
+    } catch {
+      return `${raw.trim()} (${response.status})`;
+    }
+  };
+
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       setCopiedTable(getStoredCopiedTable());
@@ -198,7 +222,7 @@ export function JobApplicationTable({
         );
 
         if (!response.ok) {
-          throw new Error("Search failed.");
+          throw new Error(await readErrorMessage(response, "Search failed."));
         }
 
         const data = (await response.json()) as {
@@ -779,7 +803,9 @@ export function JobApplicationTable({
 
   const openResumeBuilder = () => {
     setResumeBuilderError("");
+    setResumeBuilderErrorCopied(false);
     setResumeBuilderCopied(false);
+    setResumeBuilderFlowCvResumeId("");
     setResumeBuilderFlowCvOpenUrl("");
     setResumeBuilderFlowCvPreviewUrl("");
     setResumeBuilderFlowCvDownloadUrl("");
@@ -821,11 +847,13 @@ export function JobApplicationTable({
         }),
       });
 
-      const data = (await response.json()) as ResumeBuilderResponse;
-
       if (!response.ok) {
-        throw new Error(data.message || "Unable to build resume.");
+        throw new Error(
+          await readErrorMessage(response, "Unable to build resume."),
+        );
       }
+
+      const data = (await response.json()) as ResumeBuilderResponse;
 
       setResumeBuilderResult(data.result || "");
     } catch (error) {
@@ -849,6 +877,18 @@ export function JobApplicationTable({
     }, 1500);
   };
 
+  const copyResumeBuilderError = async () => {
+    if (!resumeBuilderError.trim()) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(resumeBuilderError);
+    setResumeBuilderErrorCopied(true);
+    window.setTimeout(() => {
+      setResumeBuilderErrorCopied(false);
+    }, 1500);
+  };
+
   const buildResumeInFlowCv = async () => {
     const jd = resumeBuilderJd.trim();
     const baseResume = resumeBuilderBaseResume.trim();
@@ -861,6 +901,10 @@ export function JobApplicationTable({
     setResumeBuilderFlowCvLoading(true);
     setResumeBuilderError("");
     setResumeBuilderCopied(false);
+    setResumeBuilderFlowCvResumeId("");
+    setResumeBuilderFlowCvOpenUrl("");
+    setResumeBuilderFlowCvPreviewUrl("");
+    setResumeBuilderFlowCvDownloadUrl("");
 
     try {
       const response = await fetch("/api/job-application-flowcv", {
@@ -877,19 +921,30 @@ export function JobApplicationTable({
         }),
       });
 
-      const data = (await response.json()) as ResumeBuilderResponse;
-
       if (!response.ok) {
-        throw new Error(data.message || "Unable to create a FlowCV resume.");
+        throw new Error(
+          await readErrorMessage(response, "Unable to create a FlowCV resume."),
+        );
       }
+
+      const data = (await response.json()) as ResumeBuilderResponse;
 
       if (data.result) {
         setResumeBuilderResult(data.result);
       }
 
-      setResumeBuilderFlowCvOpenUrl(data.openUrl || "");
-      setResumeBuilderFlowCvPreviewUrl(data.previewUrl || data.openUrl || "");
-      setResumeBuilderFlowCvDownloadUrl(data.downloadUrl || "");
+      const resumeId = data.resumeId?.trim() || "";
+      const openUrl = data.openUrl?.trim() || "";
+      const previewUrl = data.previewUrl?.trim() || openUrl;
+      const downloadUrl =
+        resumeId
+          ? `/api/job-application-flowcv?resumeId=${encodeURIComponent(resumeId)}`
+          : "";
+
+      setResumeBuilderFlowCvResumeId(resumeId);
+      setResumeBuilderFlowCvOpenUrl(openUrl);
+      setResumeBuilderFlowCvPreviewUrl(previewUrl);
+      setResumeBuilderFlowCvDownloadUrl(downloadUrl);
     } catch (error) {
       setResumeBuilderError(
         error instanceof Error
@@ -1925,10 +1980,16 @@ export function JobApplicationTable({
                         Open in FlowCV
                       </button>
                     ) : null}
-                    {resumeBuilderFlowCvDownloadUrl ? (
+                    {resumeBuilderFlowCvResumeId ? (
                       <button
                         type="button"
-                        onClick={() => openUrl(resumeBuilderFlowCvDownloadUrl)}
+                        onClick={() =>
+                          openUrl(
+                            `/api/job-application-flowcv?resumeId=${encodeURIComponent(
+                              resumeBuilderFlowCvResumeId,
+                            )}`,
+                          )
+                        }
                         className="h-9 rounded-full border border-[var(--border)] bg-white px-4 text-sm font-semibold transition-colors hover:bg-[color:var(--background)]"
                       >
                         Download PDF
@@ -1939,7 +2000,21 @@ export function JobApplicationTable({
 
                 {resumeBuilderError ? (
                   <div className="mb-4 rounded-[18px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                    {resumeBuilderError}
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-rose-700/90">
+                        Error Details
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void copyResumeBuilderError()}
+                        className="rounded-full border border-rose-200 bg-white px-3 py-1 text-xs font-semibold text-rose-700 transition-colors hover:bg-rose-100"
+                      >
+                        {resumeBuilderErrorCopied ? "Copied" : "Copy"}
+                      </button>
+                    </div>
+                    <div className="whitespace-pre-wrap break-words leading-6">
+                      {resumeBuilderError}
+                    </div>
                   </div>
                 ) : null}
 

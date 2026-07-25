@@ -173,8 +173,12 @@ export async function createFlowCvResumeFromDraft(input: {
   profileName?: string;
 }) {
   const title = input.draft.title;
-  const allResumes = await getFlowCvResumeList();
-  const templateResumeId = await getFlowCvTemplateResumeId();
+  const allResumes = await withFlowCvStep("load FlowCV resumes", () =>
+    getFlowCvResumeList(),
+  );
+  const templateResumeId = await withFlowCvStep("load FlowCV template resume", () =>
+    getFlowCvTemplateResumeId(),
+  );
   const reusableResume = findReusableFlowCvResume(
     allResumes,
     title,
@@ -184,12 +188,11 @@ export async function createFlowCvResumeFromDraft(input: {
 
   if (!resumeId) {
     try {
-      const duplicated = await flowCvApiRequest<{ resume: FlowCvResume }>(
-        "/api/resumes/duplicate",
-        {
+      const duplicated = await withFlowCvStep("duplicate FlowCV template", () =>
+        flowCvApiRequest<{ resume: FlowCvResume }>("/api/resumes/duplicate", {
           method: "POST",
           body: { duplicateId: templateResumeId },
-        },
+        }),
       );
       resumeId = duplicated.data.resume.id;
     } catch (error) {
@@ -203,45 +206,51 @@ export async function createFlowCvResumeFromDraft(input: {
     }
   }
 
-  await flowCvApiRequest("/api/resumes/rename_resume", {
-    method: "PATCH",
-    body: { resumeId, resumeTitle: title },
-  });
+  await withFlowCvStep("rename FlowCV resume", () =>
+    flowCvApiRequest("/api/resumes/rename_resume", {
+      method: "PATCH",
+      body: { resumeId, resumeTitle: title },
+    }),
+  );
 
-  const duplicatedResume = await getFlowCvResume(resumeId);
+  const duplicatedResume = await withFlowCvStep("load duplicated FlowCV resume", () =>
+    getFlowCvResume(resumeId),
+  );
 
-  await flowCvApiRequest("/api/resumes/save_personal_details", {
-    method: "PATCH",
-    body: {
-      resumeId,
-      personalDetails: {
-        ...duplicatedResume.personalDetails,
-        fullName:
-          input.draft.personalDetails.fullName ||
-          input.profileName?.trim() ||
-          duplicatedResume.personalDetails?.fullName ||
-          "Candidate",
-        jobTitle:
-          input.draft.personalDetails.jobTitle ||
-          duplicatedResume.personalDetails?.jobTitle ||
-          "",
-        displayEmail: input.draft.personalDetails.displayEmail,
-        phone: input.draft.personalDetails.phone,
-        address: input.draft.personalDetails.address,
-        website: input.draft.personalDetails.website,
-        websiteLink: input.draft.personalDetails.websiteLink,
-        social: {
-          ...(duplicatedResume.personalDetails?.social ?? {}),
-          linkedIn: input.draft.personalDetails.linkedIn
-            ? {
-                link: input.draft.personalDetails.linkedIn,
-                display: input.draft.personalDetails.linkedIn,
-              }
-            : undefined,
+  await withFlowCvStep("save FlowCV personal details", () =>
+    flowCvApiRequest("/api/resumes/save_personal_details", {
+      method: "PATCH",
+      body: {
+        resumeId,
+        personalDetails: {
+          ...duplicatedResume.personalDetails,
+          fullName:
+            input.draft.personalDetails.fullName ||
+            input.profileName?.trim() ||
+            duplicatedResume.personalDetails?.fullName ||
+            "Candidate",
+          jobTitle:
+            input.draft.personalDetails.jobTitle ||
+            duplicatedResume.personalDetails?.jobTitle ||
+            "",
+          displayEmail: input.draft.personalDetails.displayEmail,
+          phone: input.draft.personalDetails.phone,
+          address: input.draft.personalDetails.address,
+          website: input.draft.personalDetails.website,
+          websiteLink: input.draft.personalDetails.websiteLink,
+          social: {
+            ...(duplicatedResume.personalDetails?.social ?? {}),
+            linkedIn: input.draft.personalDetails.linkedIn
+              ? {
+                  link: input.draft.personalDetails.linkedIn,
+                  display: input.draft.personalDetails.linkedIn,
+                }
+              : undefined,
+          },
         },
       },
-    },
-  });
+    }),
+  );
 
   const contentSections = duplicatedResume.content ?? {};
 
@@ -249,7 +258,9 @@ export async function createFlowCvResumeFromDraft(input: {
     const entries = section?.entries ?? [];
 
     for (const entry of entries) {
-      await deleteFlowCvEntry(resumeId, sectionId, entry.id);
+      await withFlowCvStep(`clear FlowCV section ${sectionId}`, () =>
+        deleteFlowCvEntry(resumeId, sectionId, entry.id),
+      );
     }
   }
 
@@ -273,47 +284,55 @@ export async function createFlowCvResumeFromDraft(input: {
   ]) || "skill";
 
   if (input.draft.summary) {
-    await saveFlowCvEntry(resumeId, profileSectionId, {
-      id: crypto.randomUUID(),
-      text: input.draft.summary,
-      isHidden: false,
-    });
+    await withFlowCvStep("save FlowCV summary section", () =>
+      saveFlowCvEntry(resumeId, profileSectionId, {
+        id: crypto.randomUUID(),
+        text: input.draft.summary,
+        isHidden: false,
+      }),
+    );
   }
 
   for (const entry of input.draft.sections.experience.entries) {
-    await saveFlowCvEntry(resumeId, experienceSectionId, {
-      id: crypto.randomUUID(),
-      title: entry.title,
-      subTitle: entry.company,
-      location: entry.location,
-      startDateNew: entry.startDateNew,
-      endDateNew: entry.endDateNew,
-      description: entry.description,
-      isHidden: false,
-    });
+    await withFlowCvStep("save FlowCV experience section", () =>
+      saveFlowCvEntry(resumeId, experienceSectionId, {
+        id: crypto.randomUUID(),
+        title: entry.title,
+        subTitle: entry.company,
+        location: entry.location,
+        startDateNew: entry.startDateNew,
+        endDateNew: entry.endDateNew,
+        description: entry.description,
+        isHidden: false,
+      }),
+    );
   }
 
   for (const entry of input.draft.sections.education.entries) {
-    await saveFlowCvEntry(resumeId, educationSectionId, {
-      id: crypto.randomUUID(),
-      degree: entry.degree,
-      school: entry.school,
-      location: entry.location,
-      startDateNew: entry.startDateNew,
-      endDateNew: entry.endDateNew,
-      description: entry.description,
-      isHidden: false,
-    });
+    await withFlowCvStep("save FlowCV education section", () =>
+      saveFlowCvEntry(resumeId, educationSectionId, {
+        id: crypto.randomUUID(),
+        degree: entry.degree,
+        school: entry.school,
+        location: entry.location,
+        startDateNew: entry.startDateNew,
+        endDateNew: entry.endDateNew,
+        description: entry.description,
+        isHidden: false,
+      }),
+    );
   }
 
   for (const entry of input.draft.sections.skills.entries) {
-    await saveFlowCvEntry(resumeId, skillSectionId, {
-      id: crypto.randomUUID(),
-      skill: entry.skill,
-      level: entry.level,
-      infoHtml: entry.infoHtml,
-      isHidden: false,
-    });
+    await withFlowCvStep("save FlowCV skills section", () =>
+      saveFlowCvEntry(resumeId, skillSectionId, {
+        id: crypto.randomUUID(),
+        skill: entry.skill,
+        level: entry.level,
+        infoHtml: entry.infoHtml,
+        isHidden: false,
+      }),
+    );
   }
 
   return {
@@ -322,6 +341,16 @@ export async function createFlowCvResumeFromDraft(input: {
     openUrl: buildFlowCvResumeEditorUrl(resumeId),
     previewUrl: buildFlowCvResumeEditorUrl(resumeId),
   };
+}
+
+function withFlowCvStep<T>(label: string, action: () => Promise<T>): Promise<T> {
+  return action().catch((error: unknown) => {
+    if (error instanceof Error) {
+      throw new Error(`${label} failed: ${error.message}`);
+    }
+
+    throw new Error(`${label} failed.`);
+  });
 }
 
 export async function downloadFlowCvResumePdf(resumeId: string) {
@@ -1166,7 +1195,13 @@ async function flowCvApiRequest<T>(
     request.body = JSON.stringify(input.body);
   }
 
-  const response = await fetch(url, request);
+  let response: Response;
+
+  try {
+    response = await fetch(url, request);
+  } catch (error) {
+    throw createFlowCvFetchError(error, endpoint);
+  }
 
   if (response.status === 302 || response.status === 301) {
     throw new Error("FlowCV session expired. Log in again and retry.");
@@ -1177,17 +1212,31 @@ async function flowCvApiRequest<T>(
   try {
     payload = (await response.json()) as FlowCvApiEnvelope<T>;
   } catch {
-    throw new Error(`FlowCV returned a non-JSON response (${response.status}).`);
+    const fallbackText = await response
+      .text()
+      .then((value) => value.trim())
+      .catch(() => "");
+    throw new Error(
+      fallbackText
+        ? `FlowCV returned a non-JSON response at ${endpoint} (${response.status}): ${fallbackText}`
+        : `FlowCV returned a non-JSON response at ${endpoint} (${response.status}).`,
+    );
   }
 
   if (!response.ok || !payload.success) {
-    throw new Error(normalizeFlowCvErrorMessage(payload.error, response.status));
+    throw new Error(
+      normalizeFlowCvErrorMessage(payload.error, response.status, endpoint),
+    );
   }
 
   return payload;
 }
 
-function normalizeFlowCvErrorMessage(rawError: string | undefined, status: number) {
+function normalizeFlowCvErrorMessage(
+  rawError: string | undefined,
+  status: number,
+  endpoint: string,
+) {
   const normalized = rawError?.trim() || "";
   const lower = normalized.toLowerCase();
 
@@ -1200,14 +1249,18 @@ function normalizeFlowCvErrorMessage(rawError: string | undefined, status: numbe
     lower.includes("invalid_request_error") ||
     lower.includes("session expired")
   ) {
-    return "FlowCV authentication failed. Refresh your FlowCV login or session cookie, then try again.";
+    return `FlowCV authentication failed at ${endpoint}. Refresh your FlowCV login or session cookie, then try again.`;
+  }
+
+  if (normalized && lower === "an error occurred") {
+    return `FlowCV returned a generic error at ${endpoint} (${status}).`;
   }
 
   if (normalized) {
-    return normalized;
+    return `${normalized} [endpoint: ${endpoint}, status: ${status}]`;
   }
 
-  return `FlowCV request failed (${status}).`;
+  return `FlowCV request failed at ${endpoint} (${status}).`;
 }
 
 async function flowCvBinaryRequest(
@@ -1248,14 +1301,22 @@ async function flowCvBinaryRequest(
     request.body = JSON.stringify(input.body);
   }
 
-  const response = await fetch(url, request);
+  let response: Response;
+
+  try {
+    response = await fetch(url, request);
+  } catch (error) {
+    throw createFlowCvFetchError(error, endpoint);
+  }
 
   if (response.status === 302 || response.status === 301) {
     throw new Error("FlowCV session expired. Log in again and retry.");
   }
 
   if (!response.ok) {
-    throw new Error(`FlowCV PDF download failed (${response.status}).`);
+    throw new Error(
+      `FlowCV PDF download failed at ${endpoint} (${response.status}).`,
+    );
   }
 
   const buffer = Buffer.from(await response.arrayBuffer());
@@ -1265,11 +1326,11 @@ async function flowCvBinaryRequest(
   const normalizedContentType = contentType?.toLowerCase() ?? "";
 
   if (normalizedContentType.includes("application/json")) {
-    throw createFlowCvBinaryError(buffer, response.status);
+    throw createFlowCvBinaryError(buffer, response.status, endpoint);
   }
 
   if (!isPdfBuffer(buffer)) {
-    throw createFlowCvBinaryError(buffer, response.status);
+    throw createFlowCvBinaryError(buffer, response.status, endpoint);
   }
 
   return {
@@ -1283,7 +1344,11 @@ function isPdfBuffer(buffer: Buffer) {
   return buffer.subarray(0, 4).toString("utf8") === "%PDF";
 }
 
-function createFlowCvBinaryError(buffer: Buffer, status: number) {
+function createFlowCvBinaryError(
+  buffer: Buffer,
+  status: number,
+  endpoint: string,
+) {
   const text = buffer.toString("utf8").trim();
 
   if (text.startsWith("{")) {
@@ -1296,14 +1361,56 @@ function createFlowCvBinaryError(buffer: Buffer, status: number) {
       const message = payload.error || payload.message;
 
       if (message) {
-        return new Error(message);
+        return new Error(`${message} [endpoint: ${endpoint}, status: ${status}]`);
       }
     } catch {
       // Fall through to the generic message below.
     }
   }
 
-  return new Error(`FlowCV PDF download failed (${status}).`);
+  return new Error(`FlowCV PDF download failed at ${endpoint} (${status}).`);
+}
+
+function createFlowCvFetchError(error: unknown, endpoint: string) {
+  if (error instanceof Error) {
+    const cause = extractErrorCauseMessage(error);
+    return new Error(
+      cause
+        ? `FlowCV network request failed at ${endpoint}: ${error.message}. Cause: ${cause}`
+        : `FlowCV network request failed at ${endpoint}: ${error.message}`,
+    );
+  }
+
+  return new Error(`FlowCV network request failed at ${endpoint}.`);
+}
+
+function extractErrorCauseMessage(error: Error) {
+  const cause = error.cause;
+
+  if (cause instanceof Error) {
+    return cause.message;
+  }
+
+  if (cause && typeof cause === "object") {
+    const message =
+      "message" in cause && typeof cause.message === "string"
+        ? cause.message
+        : "";
+    const code =
+      "code" in cause && typeof cause.code === "string" ? cause.code : "";
+
+    if (message && code) {
+      return `${message} (${code})`;
+    }
+
+    return message || code || JSON.stringify(cause);
+  }
+
+  if (typeof cause === "string") {
+    return cause;
+  }
+
+  return "";
 }
 
 async function waitForFlowCvExport(delayMs: number) {

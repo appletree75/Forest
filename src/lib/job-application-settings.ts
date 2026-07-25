@@ -14,6 +14,10 @@ const getCachedJobApplicationStackOptions = unstable_cache(
     try {
       const settings = await getAppSettingsRow();
 
+      if (settings.jobApplicationStacks != null) {
+        return parseStoredStacks(settings.jobApplicationStacks);
+      }
+
       const parsed =
         settings?.permissionMatrix &&
         typeof settings.permissionMatrix === "object" &&
