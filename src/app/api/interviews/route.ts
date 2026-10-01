@@ -12,6 +12,7 @@ import {
   deleteInterviewEvent,
   updateInterviewEvent,
 } from "@/lib/interview-storage";
+import { publishInterviewUpdate } from "@/lib/interview-updates";
 import type { InterviewEvent } from "@/lib/types";
 
 export async function POST(request: Request) {
@@ -27,6 +28,7 @@ export async function POST(request: Request) {
       ...body,
       ownerUserId: sessionUser.id,
     });
+    publishInterviewUpdate();
     await syncInterviewEventToGoogleCalendar(sessionUser.id, event);
     return NextResponse.json({ ok: true, event });
   } catch (error) {
@@ -65,6 +67,7 @@ export async function PUT(request: Request) {
 
     const event = await updateInterviewEvent(body.id, body);
     if (event) {
+      publishInterviewUpdate();
       await syncInterviewEventToGoogleCalendar(sessionUser.id, event);
     }
     return NextResponse.json({ ok: true, event });
@@ -108,6 +111,7 @@ export async function DELETE(request: Request) {
     }
 
     await deleteInterviewEvent(body.id);
+    publishInterviewUpdate();
     await deleteInterviewEventFromGoogleCalendar(sessionUser.id, body.id);
     return NextResponse.json({ ok: true });
   } catch (error) {

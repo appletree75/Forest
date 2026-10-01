@@ -6,6 +6,7 @@ import {
   deleteIcsEventOverride,
   upsertIcsEventOverride,
 } from "@/lib/ics-event-overrides-storage";
+import { publishInterviewUpdate } from "@/lib/interview-updates";
 
 export async function PUT(request: Request) {
   const user = await requireSession();
@@ -53,6 +54,7 @@ export async function PUT(request: Request) {
       step: Number(body.step) || 0,
       notes: String(body.notes ?? ""),
     });
+    publishInterviewUpdate();
 
     return NextResponse.json({ ok: true });
   } catch (error) {
@@ -84,6 +86,7 @@ export async function DELETE(request: Request) {
     }
 
     await deleteIcsEventOverride(user.id, body.id);
+    publishInterviewUpdate();
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (isDatabaseUnavailable(error)) {

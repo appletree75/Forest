@@ -44,6 +44,7 @@ const timezoneOptions = [
   { label: "CST", timeZone: "America/Chicago" },
   { label: "EST", timeZone: "America/New_York" },
   { label: "PST", timeZone: "America/Los_Angeles" },
+  { label: "PDT", timeZone: "America/Los_Angeles" },
   { label: "GMT", timeZone: "Etc/UTC" },
 ] as const;
 
@@ -259,6 +260,7 @@ export function InterviewCalendar({
   icsCalendarSources,
   importedCalendarEvents,
   currentUserId,
+  currentUserRole,
 }: InterviewCalendarProps) {
   const router = useRouter();
   const [isRefreshing, startRefreshTransition] = useTransition();
@@ -391,6 +393,26 @@ export function InterviewCalendar({
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [autoRefreshBlocked, router, startRefreshTransition]);
+
+  useEffect(() => {
+    if (currentUserRole !== "caller") {
+      return;
+    }
+
+    const updates = new EventSource("/api/interviews/updates");
+    const handleInterviewUpdate = () => {
+      startRefreshTransition(() => {
+        router.refresh();
+      });
+    };
+
+    updates.addEventListener("interviews-changed", handleInterviewUpdate);
+
+    return () => {
+      updates.removeEventListener("interviews-changed", handleInterviewUpdate);
+      updates.close();
+    };
+  }, [currentUserRole, router, startRefreshTransition]);
 
   useEffect(() => {
     if (!hasLoadedCalendarSettings) {
@@ -662,6 +684,7 @@ export function InterviewCalendar({
               callerName: getUserName(callers, event.callerUserId),
               bidderName: getUserName(bidders, event.bidderUserId),
               ownerUserId: event.ownerUserId,
+              ownerName: getUserName(knownUsers, event.ownerUserId),
               canEditLocalEvent,
               color: displayColor,
               step: event.step,
@@ -735,6 +758,7 @@ export function InterviewCalendar({
       currentUserId,
       events,
       importedEvents,
+      knownUsers,
       effectiveIcsSourcePreferences,
       effectiveSyncedOwnerPreferences,
     ],
@@ -1524,7 +1548,9 @@ const openImportedEditModal = (
                     slotLabelInterval="01:00"
                     expandRows
                     dayHeaderFormat={{ weekday: "short", day: "numeric" }}
-                    eventContent={renderCalendarEvent}
+                    eventContent={(arg) =>
+                      renderCalendarEvent(arg, currentUserRole === "caller")
+                    }
                   />
                 </div>
               </div>
@@ -2780,10 +2806,11 @@ function RefreshIcon({ className = "" }: { className?: string }) {
   );
 }
 
-function renderCalendarEvent(arg: EventContentArg) {
+function renderCalendarEvent(arg: EventContentArg, showOwnerLabel = false) {
   const callerName = arg.event.extendedProps.callerName as string | undefined;
   const sourceName = arg.event.extendedProps.sourceName as string | undefined;
   const ownerName = arg.event.extendedProps.ownerName as string | undefined;
+  const displayedName = showOwnerLabel ? ownerName : callerName;
   const isImported = Boolean(arg.event.extendedProps.isImported);
   const rawColor = arg.event.extendedProps.color as string | undefined;
   const color = rawColor?.trim() ?? "";
@@ -2802,11 +2829,11 @@ function renderCalendarEvent(arg: EventContentArg) {
     arg.timeText,
     ownerName ? `Owner: ${ownerName}` : null,
     sourceName ? `Calendar: ${sourceName}` : null,
-    callerName ? `Caller: ${callerName}` : null,
+    !showOwnerLabel && callerName ? `Caller: ${callerName}` : null,
   ].filter(Boolean);
-  const callerBadgeLabel =
-    callerName && callerName !== "Unassigned"
-      ? callerName.split(/\s+/)[0]
+  const nameBadgeLabel =
+    displayedName && displayedName !== "Unassigned"
+      ? displayedName.split(/\s+/)[0]
       : "";
 
   return (
@@ -2828,19 +2855,19 @@ function renderCalendarEvent(arg: EventContentArg) {
           </div>
           <div className="min-w-0 truncate pr-2 pt-0.5 text-sm font-semibold">{arg.event.title}</div>
         </div>
-        <div className={`px-2 ${callerBadgeLabel ? "pb-7" : "pb-2"}`}>
+        <div className={`px-2 ${nameBadgeLabel ? "pb-7" : "pb-2"}`}>
           <div className="mt-1 truncate text-xs opacity-80">{arg.timeText}</div>
           {sourceName ? (
             <div className="mt-1 truncate text-xs opacity-80">{sourceName}</div>
           ) : null}
-          {!callerBadgeLabel && callerName ? (
-            <div className="mt-1 truncate text-xs opacity-80">{callerName}</div>
+          {!nameBadgeLabel && displayedName ? (
+            <div className="mt-1 truncate text-xs opacity-80">{displayedName}</div>
           ) : null}
         </div>
       </div>
-      {callerBadgeLabel ? (
+      {nameBadgeLabel ? (
         <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rounded-full border border-[rgba(18,26,19,0.16)] bg-white px-1.5 py-0.5 text-[10px] font-semibold leading-none text-[color:var(--foreground)]">
-          {callerBadgeLabel}
+          {nameBadgeLabel}
         </div>
       ) : null}
     </div>
@@ -3368,7 +3395,7 @@ function compareEvents(a: InterviewEvent, b: InterviewEvent) {
   );
 }
 
-function getUserName(users: ManagedUser[], userId: string) {
+function getUserName(users: Array<{ id: string; name: string }>, userId: string) {
   return users.find((user) => user.id === userId)?.name ?? "Unassigned";
 }
 
