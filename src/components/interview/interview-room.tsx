@@ -807,6 +807,10 @@ function ChatColumn({
             const fileAttachments = messageAttachments.filter(
               (attachment) => !attachment.mimeType.startsWith("image/"),
             );
+            const hasOnlyImageAttachments =
+              !message.content.trim() &&
+              fileAttachments.length === 0 &&
+              imageAttachments.length > 0;
 
             return (
               <div key={message.id} className={`flex ${alignRight ? "justify-end" : "justify-start"}`}>
@@ -826,14 +830,24 @@ function ChatColumn({
                     {getInterviewInitials(message.userName)}
                   </div>
                   <div
-                    className={`rounded-[22px] px-4 py-3 text-[#213025] shadow-[0_8px_20px_rgba(24,34,24,0.05)] ${
-                      isOwnMessage
-                        ? "rounded-br-[8px] bg-[#eefddc]"
-                        : "rounded-bl-[8px] bg-white"
+                    className={`text-[#213025] ${
+                      hasOnlyImageAttachments
+                        ? "bg-transparent p-0 shadow-none"
+                        : `rounded-[22px] px-4 py-3 shadow-[0_8px_20px_rgba(24,34,24,0.05)] ${
+                            isOwnMessage
+                              ? "rounded-br-[8px] bg-[#eefddc]"
+                              : "rounded-bl-[8px] bg-white"
+                          }`
                     }`}
                   >
                     {imageAttachments.length > 0 ? (
-                      <div className="mb-2 grid max-w-md grid-cols-2 gap-1.5">
+                      <div
+                        className={`grid max-w-md gap-1.5 ${
+                          imageAttachments.length === 1 ? "grid-cols-1" : "grid-cols-2"
+                        } ${
+                          hasOnlyImageAttachments ? "" : "mb-2"
+                        }`}
+                      >
                         {imageAttachments.map((attachment) => (
                           <button
                             key={attachment.id}
@@ -872,7 +886,11 @@ function ChatColumn({
                         ))}
                       </div>
                     ) : null}
-                    <div className="flex items-end justify-between gap-3">
+                    <div
+                      className={`flex items-end justify-between gap-3 ${
+                        hasOnlyImageAttachments ? "mt-1 px-1" : ""
+                      }`}
+                    >
                       {message.content ? (
                         <div className="min-w-0 whitespace-pre-wrap text-[15px] leading-6">
                           {message.content}
@@ -880,6 +898,8 @@ function ChatColumn({
                       ) : null}
                       <div
                         className={`shrink-0 text-[11px] ${
+                          hasOnlyImageAttachments ? "ml-auto" : ""
+                        } ${
                           isOwnMessage ? "text-[#668669]" : "text-[#849383]"
                         }`}
                       >
