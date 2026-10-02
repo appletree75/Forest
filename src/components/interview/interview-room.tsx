@@ -3,6 +3,7 @@
 import type {
   ChangeEvent,
   ClipboardEvent,
+  CSSProperties,
   DragEvent,
   ReactNode,
 } from "react";
@@ -67,6 +68,16 @@ export function InterviewRoom({
   const shouldScrollTeamOnNextRenderRef = useRef(false);
   const shouldScrollAiOnNextRenderRef = useRef(false);
   const shouldFollowTeamRef = useRef(true);
+  const chatSplitRef = useRef<HTMLDivElement | null>(null);
+  const [resizingChatColumns, setResizingChatColumns] = useState(false);
+  const [aiPaneWidth, setAiPaneWidth] = useState(() => {
+    if (typeof window === "undefined") {
+      return 50;
+    }
+
+    const saved = Number(window.localStorage.getItem("nex-interview-ai-pane-width"));
+    return Number.isFinite(saved) && saved >= 25 && saved <= 75 ? saved : 50;
+  });
 
   const messages = useMemo<RoomUiMessage[]>(
     () => mergeRoomMessages(serverMessages, pendingMessages),
@@ -441,8 +452,12 @@ export function InterviewRoom({
         </div>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-2">
-        <ChatColumn
+      <div ref={chatSplitRef} className="flex min-h-0 flex-1 flex-col gap-4 xl:flex-row xl:gap-0">
+        <div
+          className="min-h-0 min-w-0 w-full xl:w-[var(--ai-pane-width)]"
+          style={{ "--ai-pane-width": `${aiPaneWidth}%` } as CSSProperties}
+        >
+          <ChatColumn
           title="AI room"
           description="Shared AI conversation visible to everyone in the room."
           headerAction={
@@ -465,8 +480,58 @@ export function InterviewRoom({
           onSend={() => postMessage("ai")}
           pending={aiSending}
           scrollRef={aiScrollRef}
-        />
-        <ChatColumn
+          />
+        </div>
+        <div
+          role="separator"
+          aria-label="Resize AI Room and Team Chat"
+          aria-orientation="vertical"
+          aria-valuemin={25}
+          aria-valuemax={75}
+          aria-valuenow={Math.round(aiPaneWidth)}
+          tabIndex={0}
+          onPointerDown={(event) => {
+            event.currentTarget.setPointerCapture(event.pointerId);
+            setResizingChatColumns(true);
+          }}
+          onPointerMove={(event) => {
+            if (!resizingChatColumns || !chatSplitRef.current) {
+              return;
+            }
+
+            const bounds = chatSplitRef.current.getBoundingClientRect();
+            const nextWidth = ((event.clientX - bounds.left) / bounds.width) * 100;
+            setAiPaneWidth(Math.min(75, Math.max(25, nextWidth)));
+          }}
+          onPointerUp={(event) => {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+            setResizingChatColumns(false);
+            window.localStorage.setItem(
+              "nex-interview-ai-pane-width",
+              String(aiPaneWidth),
+            );
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+              return;
+            }
+
+            event.preventDefault();
+            const direction = event.key === "ArrowLeft" ? -2 : 2;
+            setAiPaneWidth((current) => {
+              const next = Math.min(75, Math.max(25, current + direction));
+              window.localStorage.setItem("nex-interview-ai-pane-width", String(next));
+              return next;
+            });
+          }}
+          className={`group relative hidden w-4 shrink-0 cursor-col-resize touch-none items-center justify-center xl:flex ${
+            resizingChatColumns ? "bg-[#e1ebdd]" : ""
+          }`}
+        >
+          <span className="h-16 w-1 rounded-full bg-[#b8c9b8] transition-all group-hover:h-24 group-hover:bg-[#76927d]" />
+        </div>
+        <div className="min-h-0 min-w-0 w-full xl:flex-1">
+          <ChatColumn
           title="Team chat"
           description="Fast room chat between users."
           discussionStyle
@@ -480,7 +545,8 @@ export function InterviewRoom({
           onScroll={() => {
             shouldFollowTeamRef.current = isNearBottom(teamScrollRef.current);
           }}
-        />
+          />
+        </div>
       </div>
 
       {contextModalOpen ? (
@@ -1215,60 +1281,10 @@ function ContextField({
 }
 
 function buildAiDisplayMessages(messages: RoomUiMessage[]) {
-  const grouped: RoomUiMessage[] = [];
-  const unmatchedUserIndexByPendingKey = new Map<string, number>();
-  const unmatchedUserIndexes: number[] = [];
-
-  messages.forEach((message) => {
-    if (message.role === "user") {
-      grouped.push(message);
-      const userIndex = grouped.length - 1;
-
-      if (message.pendingKey) {
-        unmatchedUserIndexByPendingKey.set(message.pendingKey, userIndex);
-      } else {
-        unmatchedUserIndexes.push(userIndex);
-      }
-
-      return;
-    }
-
-    if (message.role === "assistant") {
-      let userIndex: number | undefined;
-
-      if (message.pendingKey && unmatchedUserIndexByPendingKey.has(message.pendingKey)) {
-        userIndex = unmatchedUserIndexByPendingKey.get(message.pendingKey);
-        unmatchedUserIndexByPendingKey.delete(message.pendingKey);
-      } else if (unmatchedUserIndexes.length > 0) {
-        userIndex = unmatchedUserIndexes.shift();
-      }
-
-      if (userIndex === undefined) {
-        grouped.push(message);
-        return;
-      }
-
-      grouped.splice(userIndex + 1, 0, message);
-
-      unmatchedUserIndexByPendingKey.forEach((storedIndex, pendingKey) => {
-        if (storedIndex > userIndex) {
-          unmatchedUserIndexByPendingKey.set(pendingKey, storedIndex + 1);
-        }
-      });
-
-      for (let index = 0; index < unmatchedUserIndexes.length; index += 1) {
-        if (unmatchedUserIndexes[index] > userIndex) {
-          unmatchedUserIndexes[index] += 1;
-        }
-      }
-
-      return;
-    }
-
-    grouped.push(message);
-  });
-
-  return grouped;
+  return [...messages].sort(
+    (left, right) =>
+      new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
+  );
 }
 
 function mergeRoomMessages(
