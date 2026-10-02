@@ -29,44 +29,40 @@ async function mapSession(session: {
   };
 }
 
-const getCachedUsers = unstable_cache(
-  async (): Promise<ManagedUser[]> => {
-    try {
-      await ensureDatabaseConnected();
+async function getUsersFromDatabase(): Promise<ManagedUser[]> {
+  try {
+    await ensureDatabaseConnected();
 
-      const users = await prisma.user.findMany({
-        include: {
-          sessions: {
-            orderBy: { createdAt: "desc" },
-          },
+    const users = await prisma.user.findMany({
+      include: {
+        sessions: {
+          orderBy: { createdAt: "desc" },
         },
-        orderBy: [{ role: "asc" }, { name: "asc" }],
-      });
+      },
+      orderBy: [{ role: "asc" }, { name: "asc" }],
+    });
 
-      return Promise.all(
-        users.map(async (user) => ({
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          password: "",
-          sessions: await Promise.all(user.sessions.map(mapSession)),
-          bidderAppliedRate: user.bidderAppliedRate,
-          bidderFailedRate: user.bidderFailedRate,
-          callerHourlyRate: user.callerHourlyRate,
-        })),
-      );
-    } catch (error) {
-      if (!isDatabaseUnavailable(error)) {
-        throw error;
-      }
-
-      return [];
+    return Promise.all(
+      users.map(async (user) => ({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        password: "",
+        sessions: await Promise.all(user.sessions.map(mapSession)),
+        bidderAppliedRate: user.bidderAppliedRate,
+        bidderFailedRate: user.bidderFailedRate,
+        callerHourlyRate: user.callerHourlyRate,
+      })),
+    );
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) {
+      throw error;
     }
-  },
-  ["users"],
-  { tags: ["users"] },
-);
+
+    return [];
+  }
+}
 
 const getCachedUsersBasic = unstable_cache(
   async (): Promise<ManagedUser[]> => {
@@ -101,7 +97,7 @@ const getCachedUsersBasic = unstable_cache(
 );
 
 export async function getUsers(): Promise<ManagedUser[]> {
-  return getCachedUsers();
+  return getUsersFromDatabase();
 }
 
 export async function getUsersBasic(): Promise<ManagedUser[]> {

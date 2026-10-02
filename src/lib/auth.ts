@@ -17,7 +17,6 @@ import {
   recordFailedLoginAttempt,
 } from "@/lib/login-rate-limit";
 import { verifyPassword } from "@/lib/passwords";
-import { defaultPermissionMatrix } from "@/lib/permission-config";
 import { prisma } from "@/lib/prisma";
 import { getPermissionMatrix, getRolePermissions } from "@/lib/permissions";
 import type { PermissionKey, SessionUser } from "@/lib/types";
@@ -25,8 +24,6 @@ import type { PermissionKey, SessionUser } from "@/lib/types";
 const sessionCookieKey = "nex_session";
 type SessionCookiePayload = {
   token: string;
-  user: SessionUser;
-  permissions?: PermissionKey[];
 };
 type SessionRecord = {
   user: {
@@ -61,15 +58,6 @@ export const getSessionState = cache(
   } catch (error) {
     if (!isDatabaseUnavailable(error)) {
       throw error;
-    }
-
-    if (cookiePayload?.user) {
-      return {
-        user: cookiePayload.user,
-        permissions:
-          cookiePayload.permissions ??
-          getRolePermissions(defaultPermissionMatrix, cookiePayload.user.role),
-      };
     }
 
     return { user: null, permissions: [] };
@@ -168,8 +156,6 @@ export async function signIn(email: string, password: string) {
   }
 
   const token = createSessionToken();
-  const matrix = await getPermissionMatrix();
-  const permissions = getRolePermissions(matrix, matchedUser.role);
   const userAgent = requestHeaders.get("user-agent") ?? "";
   const osInfo = getDeviceInfoFromUserAgent(userAgent);
   const expiresAt = addHours(new Date(), 12);
@@ -201,16 +187,7 @@ export async function signIn(email: string, password: string) {
   const cookieStore = await cookies();
   cookieStore.set(
     sessionCookieKey,
-    JSON.stringify({
-      token,
-      user: {
-        id: matchedUser.id,
-        name: matchedUser.name,
-        email: matchedUser.email,
-        role: matchedUser.role,
-      },
-      permissions,
-    } satisfies SessionCookiePayload),
+    token,
     {
     httpOnly: true,
     sameSite: "lax",
