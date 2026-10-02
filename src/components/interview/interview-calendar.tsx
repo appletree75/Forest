@@ -10,6 +10,7 @@ import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import luxon3Plugin from "@fullcalendar/luxon3";
 import timeGridPlugin from "@fullcalendar/timegrid";
+import { DateTime } from "luxon";
 import type {
   DateSelectArg,
   DatesSetArg,
@@ -210,12 +211,23 @@ function mergeRefreshedImportedEvents(
   for (const sourceId of activeSourceIds) {
     const nextSourceEvents = nextBySource.get(sourceId);
     const currentSourceEvents = currentBySource.get(sourceId) ?? [];
-    const sourceEvents =
-      nextSourceEvents && nextSourceEvents.length > 0
-        ? looksLikePartialRefresh(currentSourceEvents.length, nextSourceEvents.length)
-          ? currentSourceEvents
-          : nextSourceEvents
-        : currentSourceEvents;
+    let sourceEvents = currentSourceEvents;
+
+    if (nextSourceEvents && nextSourceEvents.length > 0) {
+      if (looksLikePartialRefresh(currentSourceEvents.length, nextSourceEvents.length)) {
+        const partiallyRefreshed = new Map(
+          currentSourceEvents.map((event) => [event.id, event]),
+        );
+
+        for (const event of nextSourceEvents) {
+          partiallyRefreshed.set(event.id, event);
+        }
+
+        sourceEvents = Array.from(partiallyRefreshed.values());
+      } else {
+        sourceEvents = nextSourceEvents;
+      }
+    }
 
     for (const event of sourceEvents) {
       mergedById.set(event.id, event);
@@ -645,8 +657,7 @@ export function InterviewCalendar({
     };
   });
 
-  const calendarEvents = useMemo<EventInput[]>(
-    () => {
+  const calendarEvents: EventInput[] = (() => {
       const localEvents: EventInput[] = events.flatMap((event) => {
           const canEditLocalEvent =
             !event.ownerUserId || event.ownerUserId === currentUserId;
@@ -667,11 +678,16 @@ export function InterviewCalendar({
             editable: canEditLocalEvent,
             id: event.id,
             title: event.title,
-            start: new Date(combineDateTime(event.scheduledDate, event.scheduledTime)),
+            start: dateTimeInTimeZone(
+              event.scheduledDate,
+              event.scheduledTime,
+              calendarTimeZone,
+            ),
             end: addMinutesToDateTime(
               event.scheduledDate,
               event.scheduledTime,
               event.durationMinutes,
+              calendarTimeZone,
             ),
             classNames: [
               displayColor
@@ -751,18 +767,7 @@ export function InterviewCalendar({
         ...localEvents,
         ...syncedEvents,
       ];
-    },
-    [
-      bidders,
-      callers,
-      currentUserId,
-      events,
-      importedEvents,
-      knownUsers,
-      effectiveIcsSourcePreferences,
-      effectiveSyncedOwnerPreferences,
-    ],
-  );
+  })();
 
   const openCreateModal = (date: string, time = "09:00") => {
     setDraft(emptyDraft(date, time));
@@ -1031,16 +1036,18 @@ const openImportedEditModal = (
   };
 
   const handleSelect = (selection: DateSelectArg) => {
-    const dateKey = toDateKey(selection.start);
+    const dateKey = toDateKey(selection.start, calendarTimeZone);
     setSelectedDate(dateKey);
     openCreateModal(
       dateKey,
-      selection.allDay ? "09:00" : formatTimeInputValue(selection.start),
+      selection.allDay
+        ? "09:00"
+        : formatTimeInputValue(selection.start, calendarTimeZone),
     );
   };
 
   const handleDateClick = (arg: DateClickArg) => {
-    setSelectedDate(toDateKey(arg.date));
+    setSelectedDate(toDateKey(arg.date, calendarTimeZone));
   };
 
   const handleEventClick = (arg: EventClickArg) => {
@@ -1196,8 +1203,8 @@ const openImportedEditModal = (
 
     const nextEvent: InterviewEvent = {
       ...rawEvent,
-      scheduledDate: toDateKey(nextStart),
-      scheduledTime: formatTimeInputValue(nextStart),
+      scheduledDate: toDateKey(nextStart, calendarTimeZone),
+      scheduledTime: formatTimeInputValue(nextStart, calendarTimeZone),
       durationMinutes: Math.max(
         15,
         Math.round((nextEnd.getTime() - nextStart.getTime()) / 60000),
@@ -2365,15 +2372,24 @@ const openImportedEditModal = (
               <Field label="Date">
                 <PickerInput
                   type="date"
-                  value={toDateKey(new Date(importedDraft.start))}
+                  value={toDateKey(new Date(importedDraft.start), calendarTimeZone)}
                   disabled={isImportedModalReadOnly}
                   onChange={(value) =>
                     setImportedDraft((current) =>
                       current
                         ? {
                             ...current,
-                            start: mergeDateAndTime(current.start, value),
-                            end: shiftEndToMatchDate(current.start, current.end, value),
+                            start: mergeDateAndTime(
+                              current.start,
+                              value,
+                              calendarTimeZone,
+                            ),
+                            end: shiftEndToMatchDate(
+                              current.start,
+                              current.end,
+                              value,
+                              calendarTimeZone,
+                            ),
                           }
                         : current,
                     )
@@ -2383,15 +2399,27 @@ const openImportedEditModal = (
               <Field label="Time">
                 <PickerInput
                   type="time"
-                  value={formatTimeInputValue(new Date(importedDraft.start))}
+                  value={formatTimeInputValue(
+                    new Date(importedDraft.start),
+                    calendarTimeZone,
+                  )}
                   disabled={isImportedModalReadOnly}
                   onChange={(value) =>
                     setImportedDraft((current) =>
                       current
                         ? {
                             ...current,
-                            start: mergeTimeIntoIso(current.start, value),
-                            end: shiftEndToMatchStart(current.start, current.end, value),
+                            start: mergeTimeIntoIso(
+                              current.start,
+                              value,
+                              calendarTimeZone,
+                            ),
+                            end: shiftEndToMatchStart(
+                              current.start,
+                              current.end,
+                              value,
+                              calendarTimeZone,
+                            ),
                           }
                         : current,
                     )
@@ -3322,21 +3350,30 @@ function getStoredSyncedOwnerPreferences(): SyncedOwnerPreferences {
   }
 }
 
-function toDateKey(date: Date) {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
+function toDateKey(date: Date, timeZone = "local") {
+  return dateTimeInDisplayZone(date, timeZone).toFormat("yyyy-LL-dd");
 }
 
 function combineDateTime(date: string, time: string) {
   return `${date}T${time}:00`;
 }
 
-function addMinutesToDateTime(date: string, time: string, durationMinutes: number) {
-  const base = new Date(combineDateTime(date, time));
-  base.setMinutes(base.getMinutes() + durationMinutes);
-  return base;
+function dateTimeInTimeZone(date: string, time: string, timeZone: string) {
+  const parsed = DateTime.fromISO(combineDateTime(date, time), {
+    zone: timeZone === "local" ? undefined : timeZone,
+  });
+
+  return parsed.isValid ? parsed.toJSDate() : new Date(combineDateTime(date, time));
+}
+
+function addMinutesToDateTime(
+  date: string,
+  time: string,
+  durationMinutes: number,
+  timeZone: string,
+) {
+  const base = dateTimeInTimeZone(date, time, timeZone);
+  return new Date(base.getTime() + durationMinutes * 60_000);
 }
 
 function addMinutesToIso(startIso: string, durationMinutes: number) {
@@ -3345,23 +3382,31 @@ function addMinutesToIso(startIso: string, durationMinutes: number) {
   return base.toISOString();
 }
 
-function mergeDateAndTime(iso: string, dateKey: string) {
-  const current = new Date(iso);
+function mergeDateAndTime(iso: string, dateKey: string, timeZone: string) {
+  const current = dateTimeInDisplayZone(new Date(iso), timeZone);
   const [year, month, day] = dateKey.split("-").map(Number);
-  const next = new Date(current);
-  next.setFullYear(year, (month ?? 1) - 1, day ?? 1);
-  return next.toISOString();
+  const next = current.set({ year, month: month ?? 1, day: day ?? 1 });
+  return next.toUTC().toISO() ?? iso;
 }
 
-function mergeTimeIntoIso(iso: string, time: string) {
-  const current = new Date(iso);
+function mergeTimeIntoIso(iso: string, time: string, timeZone: string) {
+  const current = dateTimeInDisplayZone(new Date(iso), timeZone);
   const [hours, minutes] = time.split(":").map(Number);
-  const next = new Date(current);
-  next.setHours(hours ?? 0, minutes ?? 0, 0, 0);
-  return next.toISOString();
+  const next = current.set({
+    hour: hours ?? 0,
+    minute: minutes ?? 0,
+    second: 0,
+    millisecond: 0,
+  });
+  return next.toUTC().toISO() ?? iso;
 }
 
-function shiftEndToMatchDate(startIso: string, endIso: string, dateKey: string) {
+function shiftEndToMatchDate(
+  startIso: string,
+  endIso: string,
+  dateKey: string,
+  timeZone: string,
+) {
   const start = new Date(startIso);
   const end = new Date(endIso);
   const durationMinutes = Math.max(
@@ -3369,10 +3414,18 @@ function shiftEndToMatchDate(startIso: string, endIso: string, dateKey: string) 
     Math.round((end.getTime() - start.getTime()) / 60000),
   );
 
-  return addMinutesToIso(mergeDateAndTime(startIso, dateKey), durationMinutes);
+  return addMinutesToIso(
+    mergeDateAndTime(startIso, dateKey, timeZone),
+    durationMinutes,
+  );
 }
 
-function shiftEndToMatchStart(startIso: string, endIso: string, time: string) {
+function shiftEndToMatchStart(
+  startIso: string,
+  endIso: string,
+  time: string,
+  timeZone: string,
+) {
   const start = new Date(startIso);
   const end = new Date(endIso);
   const durationMinutes = Math.max(
@@ -3380,13 +3433,19 @@ function shiftEndToMatchStart(startIso: string, endIso: string, time: string) {
     Math.round((end.getTime() - start.getTime()) / 60000),
   );
 
-  return addMinutesToIso(mergeTimeIntoIso(startIso, time), durationMinutes);
+  return addMinutesToIso(
+    mergeTimeIntoIso(startIso, time, timeZone),
+    durationMinutes,
+  );
 }
 
-function formatTimeInputValue(date: Date) {
-  const hours = `${date.getHours()}`.padStart(2, "0");
-  const minutes = `${date.getMinutes()}`.padStart(2, "0");
-  return `${hours}:${minutes}`;
+function formatTimeInputValue(date: Date, timeZone = "local") {
+  return dateTimeInDisplayZone(date, timeZone).toFormat("HH:mm");
+}
+
+function dateTimeInDisplayZone(date: Date, timeZone: string) {
+  const parsed = DateTime.fromJSDate(date);
+  return timeZone === "local" ? parsed : parsed.setZone(timeZone);
 }
 
 function compareEvents(a: InterviewEvent, b: InterviewEvent) {

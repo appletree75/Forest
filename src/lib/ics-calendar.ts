@@ -72,6 +72,7 @@ export function applyImportedEventOverrides(
 
 function parseIcsCalendar(icsText: string, source: IcsCalendarSource) {
   const lines = unfoldIcsLines(icsText);
+  const calendarTimeZone = findCalendarTimeZone(lines);
   const events: ImportedCalendarEvent[] = [];
   let current: Record<string, string> | null = null;
 
@@ -82,7 +83,7 @@ function parseIcsCalendar(icsText: string, source: IcsCalendarSource) {
     }
 
     if (line === "END:VEVENT") {
-      const parsed = buildImportedEvent(current, source);
+      const parsed = buildImportedEvent(current, source, calendarTimeZone);
 
       if (parsed) {
         events.push(parsed);
@@ -96,7 +97,7 @@ function parseIcsCalendar(icsText: string, source: IcsCalendarSource) {
       continue;
     }
 
-    const separatorIndex = line.indexOf(":");
+    const separatorIndex = findPropertyValueSeparator(line);
 
     if (separatorIndex === -1) {
       continue;
@@ -113,6 +114,7 @@ function parseIcsCalendar(icsText: string, source: IcsCalendarSource) {
 function buildImportedEvent(
   raw: Record<string, string> | null,
   source: IcsCalendarSource,
+  calendarTimeZone: string | null,
 ) {
   if (!raw) {
     return null;
@@ -125,8 +127,16 @@ function buildImportedEvent(
     return null;
   }
 
-  const start = parseIcsDateValue(startEntry.key, startEntry.value);
-  const end = parseIcsDateValue(endEntry?.key ?? "", endEntry?.value ?? "");
+  const start = parseIcsDateValue(
+    startEntry.key,
+    startEntry.value,
+    calendarTimeZone,
+  );
+  const end = parseIcsDateValue(
+    endEntry?.key ?? "",
+    endEntry?.value ?? "",
+    calendarTimeZone,
+  );
 
   if (!start || !isValidDate(start.date)) {
     return null;
@@ -145,8 +155,12 @@ function buildImportedEvent(
     return null;
   }
 
+  const uid = raw.UID ?? `${start.date.toISOString()}:${raw.SUMMARY ?? "busy"}`;
+  const recurrenceId = getFieldValue(raw, "RECURRENCE-ID").trim();
+  const eventKey = recurrenceId ? `${uid}:${recurrenceId}` : uid;
+
   return {
-    id: `${source.id}:${raw.UID ?? `${start.date.toISOString()}:${raw.SUMMARY ?? "busy"}`}`,
+    id: `${source.id}:${eventKey}`,
     sourceId: source.id,
     sourceName: source.name,
     ownerUserId: source.ownerUserId,
@@ -184,7 +198,11 @@ function getFieldValue(raw: Record<string, string>, startsWith: string) {
   return findEntry(raw, startsWith)?.value ?? "";
 }
 
-function parseIcsDateValue(key: string, value: string) {
+function parseIcsDateValue(
+  key: string,
+  value: string,
+  calendarTimeZone: string | null,
+) {
   if (!value) {
     return null;
   }
@@ -207,7 +225,10 @@ function parseIcsDateValue(key: string, value: string) {
   const normalizedZone = tzid ? normalizeIcsTimezone(tzid) : null;
   const compact = normalized.replace("Z", "");
   const parsedDateTime =
-    parseDateTimeWithZone(compact, isUtc ? "UTC" : normalizedZone) ??
+    parseDateTimeWithZone(
+      compact,
+      isUtc ? "UTC" : normalizedZone ?? calendarTimeZone,
+    ) ??
     parseDateTimeWithZone(compact, "local");
 
   return {
@@ -217,13 +238,13 @@ function parseIcsDateValue(key: string, value: string) {
 }
 
 function extractTzid(key: string) {
-  const match = key.match(/TZID=([^;:]+)/i);
+  const match = key.match(/TZID=(?:"([^"]+)"|([^;:]+))/i);
 
   if (!match) {
     return null;
   }
 
-  return match[1].replace(/^"+|"+$/g, "").trim();
+  return (match[1] ?? match[2] ?? "").trim();
 }
 
 function parseDateTimeWithZone(value: string, zone: string | null) {
@@ -254,13 +275,70 @@ function isValidDate(value: Date) {
 }
 
 function normalizeIcsTimezone(tzid: string) {
-  const trimmed = tzid.trim();
+  const trimmed = tzid
+    .replace(/\\([,;])/g, "$1")
+    .replace(/^\/+|^"+|"+$/g, "")
+    .trim();
 
   if (IANA_ZONE_SET.has(trimmed)) {
     return trimmed;
   }
 
-  return WINDOWS_TZ_TO_IANA[trimmed] ?? trimmed;
+  const directMatch = WINDOWS_TZ_TO_IANA[trimmed];
+
+  if (directMatch) {
+    return directMatch;
+  }
+
+  const embeddedWindowsZone = Object.keys(WINDOWS_TZ_TO_IANA).find((zone) =>
+    trimmed.endsWith(`/${zone}`),
+  );
+
+  if (embeddedWindowsZone) {
+    return WINDOWS_TZ_TO_IANA[embeddedWindowsZone];
+  }
+
+  return DISPLAY_TZ_TO_IANA.find(({ pattern }) => pattern.test(trimmed))?.zone ?? trimmed;
+}
+
+function findCalendarTimeZone(lines: string[]) {
+  const timezoneLines = [
+    ...lines.filter((line) => line.startsWith("X-WR-TIMEZONE")),
+    ...lines.filter((line) => line.startsWith("TZID")),
+  ];
+
+  for (const line of timezoneLines) {
+    const separatorIndex = findPropertyValueSeparator(line);
+
+    if (separatorIndex === -1) {
+      continue;
+    }
+
+    const zone = normalizeIcsTimezone(line.slice(separatorIndex + 1));
+
+    if (DateTime.local().setZone(zone).isValid) {
+      return zone;
+    }
+  }
+
+  return null;
+}
+
+function findPropertyValueSeparator(line: string) {
+  let insideQuotes = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    if (line[index] === '"') {
+      insideQuotes = !insideQuotes;
+      continue;
+    }
+
+    if (line[index] === ":" && !insideQuotes) {
+      return index;
+    }
+  }
+
+  return -1;
 }
 
 const WINDOWS_TZ_TO_IANA: Record<string, string> = {
@@ -286,9 +364,20 @@ const WINDOWS_TZ_TO_IANA: Record<string, string> = {
   "Central Standard Time": "America/Chicago",
   "Mountain Standard Time": "America/Denver",
   "Pacific Standard Time": "America/Los_Angeles",
+  "British Columbia Standard Time": "America/Vancouver",
   "Alaskan Standard Time": "America/Anchorage",
   "Hawaiian Standard Time": "Pacific/Honolulu",
+  "Central Standard Time (Mexico)": "America/Mexico_City",
+  "Greenwich Standard Time": "Atlantic/Reykjavik",
+  "SE Asia Standard Time": "Asia/Bangkok",
 };
+
+const DISPLAY_TZ_TO_IANA = [
+  { pattern: /eastern time/i, zone: "America/New_York" },
+  { pattern: /central time/i, zone: "America/Chicago" },
+  { pattern: /mountain time/i, zone: "America/Denver" },
+  { pattern: /pacific time/i, zone: "America/Los_Angeles" },
+] as const;
 
 const IANA_ZONE_SET = new Set(Intl.supportedValuesOf("timeZone"));
 
