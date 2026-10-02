@@ -2,6 +2,7 @@
 
 import { revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 
 import { getSessionUser, signOut } from "@/lib/auth";
 import { createAuditLog } from "@/lib/audit-log";
@@ -69,7 +70,7 @@ export async function savePermissionMatrixAction(
   );
 
   await setPermissionMatrix(matrix);
-  await createAuditLog({
+  recordAuditLog({
     actorUserId: user.id,
     actorEmail: user.email,
     action: "admin.permissions_updated",
@@ -112,7 +113,7 @@ export async function saveProfileAssignmentsAction(
   }, {});
 
   await setProfileAssignments(assignments);
-  await createAuditLog({
+  recordAuditLog({
     actorUserId: user.id,
     actorEmail: user.email,
     action: "admin.profile_assignments_updated",
@@ -167,7 +168,7 @@ export async function createUserAction(_: ActionState, formData: FormData) {
     password,
     role,
   });
-  await createAuditLog({
+  recordAuditLog({
     actorUserId: user.id,
     actorEmail: user.email,
     action: "admin.user_created",
@@ -250,7 +251,7 @@ export async function updateUserAction(_: ActionState, formData: FormData) {
     callerHourlyRate,
     ...(password ? { password } : {}),
   });
-  await createAuditLog({
+  recordAuditLog({
     actorUserId: sessionUser.id,
     actorEmail: sessionUser.email,
     action: "admin.user_updated",
@@ -313,7 +314,7 @@ export async function deleteUserAction(_: ActionState, formData: FormData) {
   }
 
   await deleteUser(userId);
-  await createAuditLog({
+  recordAuditLog({
     actorUserId: sessionUser.id,
     actorEmail: sessionUser.email,
     action: "admin.user_deleted",
@@ -358,7 +359,7 @@ export async function manageUserSessionsAction(_: ActionState, formData: FormDat
 
   if (sessionId) {
     await revokeSession(sessionId);
-    await createAuditLog({
+    recordAuditLog({
       actorUserId: sessionUser.id,
       actorEmail: sessionUser.email,
       action: "admin.session_revoked",
@@ -374,7 +375,7 @@ export async function manageUserSessionsAction(_: ActionState, formData: FormDat
   }
 
   await revokeUserSessions(userId);
-  await createAuditLog({
+  recordAuditLog({
     actorUserId: sessionUser.id,
     actorEmail: sessionUser.email,
     action: "admin.user_sessions_revoked",
@@ -432,7 +433,7 @@ export async function addFinanceTransactionAction(
     date,
     note,
   });
-  await createAuditLog({
+  recordAuditLog({
     actorUserId: user.id,
     actorEmail: user.email,
     action: "admin.finance_transaction_added",
@@ -528,7 +529,7 @@ export async function resetFinancePasswordAction(
   }
 
   await setFinancePassword(nextPassword);
-  await createAuditLog({
+  recordAuditLog({
     actorUserId: user.id,
     actorEmail: user.email,
     action: "admin.finance_password_reset",
@@ -562,7 +563,7 @@ export async function deleteFinanceTransactionAction(
   }
 
   await deleteFinanceTransaction(transactionId);
-  await createAuditLog({
+  recordAuditLog({
     actorUserId: user.id,
     actorEmail: user.email,
     action: "admin.finance_transaction_deleted",
@@ -593,7 +594,7 @@ export async function clearBlockedLoginRateLimitAction(
 
   if (mode === "all") {
     await clearAllBlockedLoginRateLimits();
-    await createAuditLog({
+    recordAuditLog({
       actorUserId: user.id,
       actorEmail: user.email,
       action: "admin.blocked_logins_cleared_all",
@@ -612,7 +613,7 @@ export async function clearBlockedLoginRateLimitAction(
   }
 
   await clearLoginRateLimit(key);
-  await createAuditLog({
+  recordAuditLog({
     actorUserId: user.id,
     actorEmail: user.email,
     action: "admin.blocked_login_cleared",
@@ -644,4 +645,10 @@ function validateUserInput(user: Partial<ManagedUser>) {
   }
 
   return "";
+}
+
+function recordAuditLog(input: Parameters<typeof createAuditLog>[0]) {
+  after(async () => {
+    await createAuditLog(input);
+  });
 }

@@ -59,15 +59,19 @@ export async function getAppSettingsRow(): Promise<AppSettingsRow> {
 export async function updateAppSettingsPermissionMatrix(
   permissionMatrix: Record<string, unknown>,
 ) {
-  await ensureAppSettingsRow();
-
   await prisma.$executeRaw(
     Prisma.sql`
-      UPDATE "AppSettings"
+      INSERT INTO "AppSettings" ("id", "permissionMatrix", "createdAt", "updatedAt")
+      VALUES (
+        ${getSettingsId()},
+        ${JSON.stringify(permissionMatrix)}::jsonb,
+        NOW(),
+        NOW()
+      )
+      ON CONFLICT ("id") DO UPDATE
       SET
-        "permissionMatrix" = ${JSON.stringify(permissionMatrix)}::jsonb,
+        "permissionMatrix" = EXCLUDED."permissionMatrix",
         "updatedAt" = NOW()
-      WHERE "id" = ${getSettingsId()}
     `,
   );
 }
@@ -170,21 +174,4 @@ async function readAppSettingsRow(availableColumns: Set<string>) {
   } catch (error) {
     throw error;
   }
-}
-
-function isMissingColumnError(error: unknown, columnName: string) {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-
-  const normalizedMessage = error.message.toLowerCase();
-  const normalizedColumn = columnName.toLowerCase();
-
-  return (
-    normalizedMessage.includes("does not exist") &&
-    (normalizedMessage.includes(normalizedColumn) ||
-      normalizedMessage.includes(`appsettings.${normalizedColumn}`) ||
-      normalizedMessage.includes(`column "${normalizedColumn}"`) ||
-      normalizedMessage.includes(`column \`${normalizedColumn}\``))
-  );
 }

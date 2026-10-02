@@ -5,18 +5,27 @@ import { UserManagementForm } from "@/components/admin/user-management-form";
 import { PermissionMatrixForm } from "@/components/admin/permission-matrix-form";
 import { getRecentAuditLogs } from "@/lib/audit-log";
 import { getFinanceTransactions } from "@/lib/finance";
-import { getBidderUsers, getProfileAssignments, getProfiles } from "@/lib/profiles";
+import { getProfileAssignments, getProfiles } from "@/lib/profiles";
 import { getPermissionMatrix } from "@/lib/permissions";
 import { getUsers } from "@/lib/user-storage";
 
 export default async function AdminPage() {
-  const matrix = await getPermissionMatrix();
-  const users = await getUsers();
-  const bidderUsers = await getBidderUsers();
-  const profiles = await getProfiles();
-  const assignments = await getProfileAssignments();
-  const financeTransactions = await getFinanceTransactions();
-  const auditLogEntries = await getRecentAuditLogs();
+  const [
+    matrix,
+    users,
+    profiles,
+    assignments,
+    financeTransactions,
+    auditLogEntries,
+  ] = await Promise.all([
+    getPermissionMatrix(),
+    getUsers(),
+    getProfiles(),
+    getProfileAssignments(),
+    getFinanceTransactions(),
+    getRecentAuditLogs(),
+  ]);
+  const bidderUsers = users.filter((user) => user.role === "bidder");
   const financeRecipients = users.filter(
     (user) => user.role === "bidder" || user.role === "caller",
   );
