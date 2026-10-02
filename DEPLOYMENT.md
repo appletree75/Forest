@@ -83,11 +83,16 @@ This repo now includes [render.yaml](./render.yaml) so Render can deploy it as a
 2. In Render, create a Blueprint deployment from this repo.
 3. Set `DATABASE_URL` in Render.
 4. If using Google Calendar sync, also set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI`.
-5. Render will run:
-   - `npm run prisma:migrate:deploy`
-   - `npm run db:seed`
-   - `npm run db:migrate-json`
-   - then build and start the app
+5. Render will generate the Prisma client, build, and start the app. It does not
+   run migrations, seed data, or import legacy data automatically.
+
+Run database setup commands manually only when required:
+
+```bash
+npm run prisma:migrate:deploy
+npm run db:seed
+npm run db:migrate-json
+```
 
 ### Alternative: Railway
 

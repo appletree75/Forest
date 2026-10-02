@@ -6,7 +6,6 @@ services:
     autoDeploy: true
     buildCommand: npm ci && npm run prisma:generate && npm run build
     startCommand: node .next/standalone/server.js
-    preDeployCommand: npm run prisma:migrate:deploy
     healthCheckPath: /api/health
     envVars:
       - key: DATABASE_URL
