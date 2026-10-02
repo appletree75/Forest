@@ -807,10 +807,11 @@ function ChatColumn({
             const fileAttachments = messageAttachments.filter(
               (attachment) => !attachment.mimeType.startsWith("image/"),
             );
+            const hasImageAttachments = imageAttachments.length > 0;
             const hasOnlyImageAttachments =
               !message.content.trim() &&
               fileAttachments.length === 0 &&
-              imageAttachments.length > 0;
+              hasImageAttachments;
 
             return (
               <div key={message.id} className={`flex ${alignRight ? "justify-end" : "justify-start"}`}>
@@ -833,19 +834,23 @@ function ChatColumn({
                     className={`text-[#213025] ${
                       hasOnlyImageAttachments
                         ? "bg-transparent p-0 shadow-none"
-                        : `rounded-[22px] px-4 py-3 shadow-[0_8px_20px_rgba(24,34,24,0.05)] ${
-                            isOwnMessage
-                              ? "rounded-br-[8px] bg-[#eefddc]"
-                              : "rounded-bl-[8px] bg-white"
-                          }`
+                        : hasImageAttachments
+                          ? `overflow-hidden rounded-[22px] shadow-[0_8px_20px_rgba(24,34,24,0.05)] ${
+                              isOwnMessage
+                                ? "rounded-br-[8px] bg-[#eefddc]"
+                                : "rounded-bl-[8px] bg-white"
+                            }`
+                          : `rounded-[22px] px-4 py-3 shadow-[0_8px_20px_rgba(24,34,24,0.05)] ${
+                              isOwnMessage
+                                ? "rounded-br-[8px] bg-[#eefddc]"
+                                : "rounded-bl-[8px] bg-white"
+                            }`
                     }`}
                   >
-                    {imageAttachments.length > 0 ? (
+                    {hasImageAttachments ? (
                       <div
-                        className={`grid max-w-md gap-1.5 ${
+                        className={`grid max-w-md ${
                           imageAttachments.length === 1 ? "grid-cols-1" : "grid-cols-2"
-                        } ${
-                          hasOnlyImageAttachments ? "" : "mb-2"
                         }`}
                       >
                         {imageAttachments.map((attachment) => (
@@ -858,19 +863,28 @@ function ChatColumn({
                                 name: attachment.name,
                               })
                             }
-                            className="overflow-hidden rounded-[16px] bg-black/5"
+                            className={`overflow-hidden bg-black/5 ${
+                              hasOnlyImageAttachments ? "rounded-[16px]" : ""
+                            }`}
                           >
                             <img
                               src={attachment.dataUrl}
                               alt={attachment.name}
-                              className="h-32 w-full object-cover transition-opacity hover:opacity-90"
+                              className="max-h-56 w-full object-cover transition-opacity hover:opacity-90"
                             />
                           </button>
                         ))}
                       </div>
                     ) : null}
-                    {fileAttachments.length > 0 ? (
-                      <div className="mb-2 space-y-1.5">
+                    <div
+                      className={
+                        hasImageAttachments && !hasOnlyImageAttachments
+                          ? "px-4 pb-3 pt-2"
+                          : ""
+                      }
+                    >
+                      {fileAttachments.length > 0 ? (
+                        <div className="mb-2 space-y-1.5">
                         {fileAttachments.map((attachment) => (
                           <a
                             key={attachment.id}
@@ -884,26 +898,27 @@ function ChatColumn({
                             </span>
                           </a>
                         ))}
-                      </div>
-                    ) : null}
-                    <div
-                      className={`flex items-end justify-between gap-3 ${
-                        hasOnlyImageAttachments ? "mt-1 px-1" : ""
-                      }`}
-                    >
-                      {message.content ? (
-                        <div className="min-w-0 whitespace-pre-wrap text-[15px] leading-6">
-                          {message.content}
                         </div>
                       ) : null}
                       <div
-                        className={`shrink-0 text-[11px] ${
-                          hasOnlyImageAttachments ? "ml-auto" : ""
-                        } ${
-                          isOwnMessage ? "text-[#668669]" : "text-[#849383]"
+                        className={`flex items-end justify-between gap-3 ${
+                          hasOnlyImageAttachments ? "mt-1 px-1" : ""
                         }`}
                       >
-                        {formatInterviewMessageTime(message.createdAt)}
+                        {message.content ? (
+                          <div className="min-w-0 whitespace-pre-wrap text-[15px] leading-6">
+                            {message.content}
+                          </div>
+                        ) : null}
+                        <div
+                          className={`shrink-0 text-[11px] ${
+                            hasOnlyImageAttachments ? "ml-auto" : ""
+                          } ${
+                            isOwnMessage ? "text-[#668669]" : "text-[#849383]"
+                          }`}
+                        >
+                          {formatInterviewMessageTime(message.createdAt)}
+                        </div>
                       </div>
                     </div>
                   </div>
