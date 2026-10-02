@@ -1,0 +1,2 @@
+ALTER TABLE "InterviewRoomContext"
+ADD COLUMN IF NOT EXISTS "sharedNote" TEXT NOT NULL DEFAULT '';

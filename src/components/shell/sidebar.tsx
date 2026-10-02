@@ -121,6 +121,13 @@ export function Sidebar({ user, permissions }: SidebarProps) {
               </Link>
             );
           })}
+          {pathname === "/interview/room" ? (
+            <div
+              id="interview-room-sidebar-tools"
+              className={isCollapsed ? "hidden" : "pt-3"}
+              aria-hidden={isCollapsed}
+            />
+          ) : null}
         </div>
 
         <div

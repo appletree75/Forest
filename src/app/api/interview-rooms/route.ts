@@ -8,6 +8,7 @@ import {
   getInterviewRoomState,
   parseInterviewRoomKey,
   touchInterviewRoomPresence,
+  updateInterviewRoomSharedNote,
   upsertInterviewRoomContext,
 } from "@/lib/interview-room";
 import { getSelectedApiKey } from "@/lib/ai-settings";
@@ -155,6 +156,7 @@ export async function PATCH(request: Request) {
 
   const body = (await request.json()) as {
     roomKey?: string;
+    sharedNote?: string;
   };
   const roomKey = body.roomKey?.trim() || "";
 
@@ -163,6 +165,16 @@ export async function PATCH(request: Request) {
   }
 
   try {
+    if (typeof body.sharedNote === "string") {
+      const context = await updateInterviewRoomSharedNote({
+        roomKey,
+        sharedNote: body.sharedNote,
+        updatedBy: user.name,
+      });
+
+      return NextResponse.json({ ok: true, degraded: false, context });
+    }
+
     await touchInterviewRoomPresence({
       roomKey,
       userId: user.id,

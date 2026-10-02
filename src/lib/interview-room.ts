@@ -101,6 +101,7 @@ function mapContext(row: {
   jd: string;
   details: string;
   reference: string;
+  sharedNote: string;
   updatedBy: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -111,6 +112,7 @@ function mapContext(row: {
     jd: row.jd,
     details: row.details,
     reference: row.reference,
+    sharedNote: row.sharedNote,
     updatedBy: row.updatedBy ?? "",
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -213,6 +215,7 @@ export function emptyInterviewRoomContext(roomKey: string): InterviewRoomContext
     jd: "",
     details: "",
     reference: "",
+    sharedNote: "",
     updatedBy: "",
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),
@@ -325,6 +328,30 @@ export async function upsertInterviewRoomContext(input: {
       jd: input.jd.trim(),
       details: input.details.trim(),
       reference: input.reference.trim(),
+      updatedBy: input.updatedBy.trim() || null,
+    },
+  });
+
+  revalidateTag(`room:${input.roomKey}`);
+  return mapContext(saved);
+}
+
+export async function updateInterviewRoomSharedNote(input: {
+  roomKey: string;
+  sharedNote: string;
+  updatedBy: string;
+}) {
+  await ensureDatabaseConnected();
+
+  const saved = await prisma.interviewRoomContext.upsert({
+    where: { roomKey: input.roomKey },
+    update: {
+      sharedNote: input.sharedNote.trim(),
+      updatedBy: input.updatedBy.trim() || null,
+    },
+    create: {
+      roomKey: input.roomKey,
+      sharedNote: input.sharedNote.trim(),
       updatedBy: input.updatedBy.trim() || null,
     },
   });

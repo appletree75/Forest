@@ -1904,7 +1904,7 @@ const openImportedEditModal = (
                     type="button"
                     onClick={() =>
                       navigateToRoom(
-                        `/interview/room?type=local&id=${encodeURIComponent(editingId)}&title=${encodeURIComponent(draft.title || "Interview room")}`,
+                        `/interview/room?type=local&id=${encodeURIComponent(editingId)}&title=${encodeURIComponent(draft.title || "Interview room")}&meetingLink=${encodeURIComponent(draft.meetingLink || "")}`,
                         `local:${editingId}`,
                       )
                     }
@@ -2313,7 +2313,7 @@ const openImportedEditModal = (
                   type="button"
                   onClick={() =>
                     navigateToRoom(
-                      `/interview/room?type=imported&id=${encodeURIComponent(importedDraft.id)}&title=${encodeURIComponent(importedDraft.title || "Interview room")}`,
+                      `/interview/room?type=imported&id=${encodeURIComponent(importedDraft.id)}&title=${encodeURIComponent(importedDraft.title || "Interview room")}&meetingLink=${encodeURIComponent(importedDraft.meetingLink || "")}`,
                       `imported:${importedDraft.id}`,
                     )
                   }

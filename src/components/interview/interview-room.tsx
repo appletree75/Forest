@@ -8,6 +8,7 @@ import type {
   ReactNode,
 } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 
 import type {
@@ -36,6 +37,7 @@ type TeamAttachmentDraft = {
 
 type InterviewRoomProps = {
   roomKey: string;
+  meetingLink: string;
   user: SessionUser;
   initialPresence: InterviewRoomPresence[];
   initialMessages: InterviewRoomMessage[];
@@ -44,6 +46,7 @@ type InterviewRoomProps = {
 
 export function InterviewRoom({
   roomKey,
+  meetingLink,
   user,
   initialPresence,
   initialMessages,
@@ -63,6 +66,11 @@ export function InterviewRoom({
   const [aiSending, setAiSending] = useState(false);
   const [messageError, setMessageError] = useState("");
   const [roomDegraded, setRoomDegraded] = useState(false);
+  const [sharedNoteDraft, setSharedNoteDraft] = useState(initialContext.sharedNote);
+  const [sharedNoteSaving, setSharedNoteSaving] = useState(false);
+  const [sharedNoteSaved, setSharedNoteSaved] = useState(false);
+  const [sidebarToolsTarget, setSidebarToolsTarget] = useState<HTMLElement | null>(null);
+  const sharedNoteEditingRef = useRef(false);
   const teamScrollRef = useRef<HTMLDivElement | null>(null);
   const aiScrollRef = useRef<HTMLDivElement | null>(null);
   const shouldScrollTeamOnNextRenderRef = useRef(false);
@@ -70,14 +78,21 @@ export function InterviewRoom({
   const shouldFollowTeamRef = useRef(true);
   const chatSplitRef = useRef<HTMLDivElement | null>(null);
   const [resizingChatColumns, setResizingChatColumns] = useState(false);
-  const [aiPaneWidth, setAiPaneWidth] = useState(() => {
-    if (typeof window === "undefined") {
-      return 50;
-    }
+  const [aiPaneWidth, setAiPaneWidth] = useState(50);
 
-    const saved = Number(window.localStorage.getItem("nex-interview-ai-pane-width"));
-    return Number.isFinite(saved) && saved >= 25 && saved <= 75 ? saved : 50;
-  });
+  useEffect(() => {
+    const frameId = window.requestAnimationFrame(() => {
+      setSidebarToolsTarget(document.getElementById("interview-room-sidebar-tools"));
+      const savedWidth = Number(
+        window.localStorage.getItem("nex-interview-ai-pane-width"),
+      );
+      if (Number.isFinite(savedWidth) && savedWidth >= 25 && savedWidth <= 75) {
+        setAiPaneWidth(savedWidth);
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, []);
 
   const messages = useMemo<RoomUiMessage[]>(
     () => mergeRoomMessages(serverMessages, pendingMessages),
@@ -163,6 +178,9 @@ export function InterviewRoom({
       setPresence(payload.presence);
       setServerMessages(payload.messages);
       setRoomContext(payload.context);
+      if (!sharedNoteEditingRef.current) {
+        setSharedNoteDraft(payload.context.sharedNote);
+      }
       setContextDraft((current) =>
         contextModalOpen ? current : payload.context,
       );
@@ -384,6 +402,41 @@ export function InterviewRoom({
     }
   };
 
+  const saveSharedNote = async () => {
+    setSharedNoteSaving(true);
+    setSharedNoteSaved(false);
+    setMessageError("");
+
+    try {
+      const response = await fetch("/api/interview-rooms", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roomKey, sharedNote: sharedNoteDraft }),
+      });
+      const payload = (await response.json()) as {
+        message?: string;
+        context?: InterviewRoomContext;
+      };
+
+      if (!response.ok || !payload.context) {
+        throw new Error(payload.message || "Unable to save the shared note.");
+      }
+
+      setRoomContext(payload.context);
+      setSharedNoteDraft(payload.context.sharedNote);
+      setSharedNoteSaved(true);
+      window.setTimeout(() => setSharedNoteSaved(false), 1800);
+    } catch (error) {
+      setMessageError(
+        error instanceof Error ? error.message : "Unable to save the shared note.",
+      );
+    } finally {
+      setSharedNoteSaving(false);
+    }
+  };
+
+  const meetingHref = getSafeInterviewLink(meetingLink);
+
   return (
     <div className="flex h-[calc(100vh-3rem)] min-h-0 flex-col gap-3 overflow-hidden md:h-[calc(100vh-4rem)]">
       <div className="flex flex-wrap items-center gap-3 px-1">
@@ -438,6 +491,76 @@ export function InterviewRoom({
           ))}
         </div>
       </div>
+
+      {sidebarToolsTarget
+        ? createPortal(
+          <div className="space-y-4 border-t border-[var(--border)] pt-4">
+            <div className="min-w-0">
+              <div className="mb-1.5 text-sm font-medium">Meeting link</div>
+              <div className="flex h-10 min-h-10 items-center gap-2 rounded-lg border border-[var(--border)] bg-white px-2">
+            <input
+              value={meetingLink}
+              readOnly
+              placeholder="No meeting link added"
+              title={meetingLink}
+                    className="min-w-0 flex-1 truncate bg-transparent text-sm outline-none"
+            />
+            {meetingHref ? (
+              <a
+                href={meetingHref}
+                target="_blank"
+                rel="noreferrer"
+                      className="inline-flex h-7 w-12 shrink-0 items-center justify-center rounded-md border border-[var(--border)] text-xs font-medium hover:bg-[color:var(--background)]"
+              >
+                Open
+              </a>
+            ) : null}
+          </div>
+        </div>
+
+            <div className="min-w-0">
+              <div className="mb-1.5 flex items-center justify-between gap-2 text-sm font-medium">
+                <span>Support link</span>
+            {sharedNoteSaved ? (
+                  <span className="text-xs font-normal text-emerald-700">Saved</span>
+            ) : null}
+          </div>
+              <div className="flex h-10 min-h-10 items-center gap-2 rounded-lg border border-[var(--border)] bg-white px-2 focus-within:border-[color:var(--accent)]">
+            <input
+              value={sharedNoteDraft}
+              onFocus={() => {
+                sharedNoteEditingRef.current = true;
+              }}
+              onBlur={() => {
+                sharedNoteEditingRef.current = false;
+              }}
+              onChange={(event) => {
+                setSharedNoteDraft(event.target.value);
+                setSharedNoteSaved(false);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void saveSharedNote();
+                }
+              }}
+              placeholder=""
+                    className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => void saveSharedNote()}
+              disabled={sharedNoteSaving}
+                    className="inline-flex h-7 w-12 shrink-0 items-center justify-center rounded-md border border-transparent bg-[color:var(--accent)] text-xs font-medium text-white disabled:opacity-60"
+            >
+              {sharedNoteSaving ? "..." : "Save"}
+            </button>
+          </div>
+        </div>
+          </div>,
+            sidebarToolsTarget,
+          )
+        : null}
 
       {roomDegraded ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -687,20 +810,24 @@ function ChatColumn({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [messageAlignment, setMessageAlignment] = useState<
     "split" | "single-left" | "single-right"
-  >(() => {
-    if (typeof window === "undefined") {
-      return "split";
-    }
-
-    const saved = window.localStorage.getItem("nex-interview-team-alignment");
-    return saved === "single-left" || saved === "single-right" ? saved : "split";
-  });
+  >("split");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const attachmentsRef = useRef<TeamAttachmentDraft[]>([]);
 
   useEffect(() => {
     attachmentsRef.current = attachments;
   }, [attachments]);
+
+  useEffect(() => {
+    const frameId = window.requestAnimationFrame(() => {
+      const saved = window.localStorage.getItem("nex-interview-team-alignment");
+      if (saved === "single-left" || saved === "single-right") {
+        setMessageAlignment(saved);
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -1422,4 +1549,13 @@ function formatInterviewBytes(bytes: number) {
   }
 
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function getSafeInterviewLink(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : "";
+  } catch {
+    return "";
+  }
 }

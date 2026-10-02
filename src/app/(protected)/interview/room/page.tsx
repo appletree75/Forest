@@ -7,6 +7,7 @@ import {
   getInterviewRoomState,
   touchInterviewRoomPresence,
 } from "@/lib/interview-room";
+import { getInterviewEventById } from "@/lib/interview-storage";
 
 export default async function InterviewRoomPage({
   searchParams,
@@ -15,6 +16,7 @@ export default async function InterviewRoomPage({
     type?: string;
     id?: string;
     title?: string;
+    meetingLink?: string;
   }>;
 }) {
   const [user, params] = await Promise.all([getSessionUser(), searchParams]);
@@ -39,7 +41,11 @@ export default async function InterviewRoomPage({
     userRole: user.role,
   });
 
-  const state = await getInterviewRoomState(roomKey);
+  const [state, localEvent] = await Promise.all([
+    getInterviewRoomState(roomKey),
+    eventType === "local" ? getInterviewEventById(eventId) : Promise.resolve(null),
+  ]);
+  const meetingLink = localEvent?.meetingLink || params.meetingLink?.trim() || "";
 
   return (
     <InterviewRoom
@@ -48,6 +54,7 @@ export default async function InterviewRoomPage({
       initialPresence={state.presence}
       initialMessages={state.messages}
       initialContext={state.context}
+      meetingLink={meetingLink}
     />
   );
 }

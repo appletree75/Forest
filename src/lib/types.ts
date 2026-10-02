@@ -232,6 +232,7 @@ export type InterviewRoomContext = {
   jd: string;
   details: string;
   reference: string;
+  sharedNote: string;
   updatedBy: string;
   createdAt: string;
   updatedAt: string;
