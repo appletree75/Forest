@@ -245,15 +245,36 @@ export async function POST(request: Request) {
       channel?: "team" | "ai";
       content?: string;
       roomLabel?: string;
+      attachments?: Array<{
+        name?: string;
+        mimeType?: string;
+        sizeBytes?: number;
+        dataUrl?: string;
+      }>;
     };
     const roomKey = body.roomKey?.trim() || "";
     const channel = body.channel === "ai" ? "ai" : "team";
     const content = body.content?.trim() || "";
     const roomLabel = body.roomLabel?.trim() || "Interview room";
+    const attachments = Array.isArray(body.attachments)
+      ? body.attachments.slice(0, 8).map((attachment) => ({
+          name: String(attachment.name ?? "").trim(),
+          mimeType: String(attachment.mimeType ?? "application/octet-stream").trim(),
+          sizeBytes: Number(attachment.sizeBytes ?? 0),
+          dataUrl: String(attachment.dataUrl ?? ""),
+        }))
+      : [];
 
-    if (!roomKey || !content) {
+    if (!roomKey || (!content && attachments.length === 0)) {
       return NextResponse.json(
-        { message: "Room key and content are required." },
+        { message: "Room key and message content or attachments are required." },
+        { status: 400 },
+      );
+    }
+
+    if (channel === "ai" && attachments.length > 0) {
+      return NextResponse.json(
+        { message: "Attachments are available in Team Chat only." },
         { status: 400 },
       );
     }
@@ -276,6 +297,7 @@ export async function POST(request: Request) {
       userId: user.id,
       userName: user.name,
       content,
+      attachments,
     });
 
     let assistantMessage = null;

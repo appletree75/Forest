@@ -214,6 +214,16 @@ export type InterviewRoomMessage = {
   userName: string;
   content: string;
   createdAt: string;
+  attachments: InterviewRoomAttachment[];
+};
+
+export type InterviewRoomAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  dataUrl: string;
+  createdAt: string;
 };
 
 export type InterviewRoomContext = {

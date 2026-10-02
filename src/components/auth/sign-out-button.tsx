@@ -9,7 +9,7 @@ export function SignOutButton({ collapsed = false }: SignOutButtonProps) {
     <form action={signOutAction}>
       <button
         type="submit"
-        className={`flex w-full items-center justify-center rounded-2xl border border-[var(--border)] bg-[color:var(--panel-strong)] py-3 text-sm font-medium ${
+        className={`flex w-full items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 py-3 text-sm font-medium text-rose-700 hover:bg-rose-100 ${
           collapsed ? "px-2" : "px-4"
         }`}
       >

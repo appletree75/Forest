@@ -55,6 +55,7 @@ export function DiscussionWorkspace({
   const [roomSearch, setRoomSearch] = useState("");
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [submittingRoom, setSubmittingRoom] = useState(false);
+  const [roomError, setRoomError] = useState("");
   const [savingMembers, setSavingMembers] = useState(false);
   const [draggingFiles, setDraggingFiles] = useState(false);
   const [imagePreview, setImagePreview] = useState<ImagePreviewState | null>(null);
@@ -85,6 +86,7 @@ export function DiscussionWorkspace({
   const draftInputRef = useRef<HTMLTextAreaElement | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const shouldFollowScrollRef = useRef(true);
+  const requestedMessageRoomIdsRef = useRef(new Set<string>());
 
   const isAdmin = currentUser.role === "admin";
   const effectiveSelectedRoomId = useMemo(() => {
@@ -173,9 +175,24 @@ export function DiscussionWorkspace({
     }
 
     let cancelled = false;
+    let requestInFlight = false;
 
     const loadMessages = async () => {
-      setLoadingMessages(true);
+      if (requestInFlight) {
+        return;
+      }
+
+      requestInFlight = true;
+      const isInitialLoad = !requestedMessageRoomIdsRef.current.has(
+        effectiveSelectedRoomId,
+      );
+
+      if (isInitialLoad) {
+        requestedMessageRoomIdsRef.current.add(effectiveSelectedRoomId);
+        setLoadingMessages(true);
+      } else {
+        setLoadingMessages(false);
+      }
 
       try {
         const response = await fetch(
@@ -215,8 +232,12 @@ export function DiscussionWorkspace({
             ),
           };
         });
+      } catch {
+        // Keep the current messages and let the next poll retry quietly.
       } finally {
-        if (!cancelled) {
+        requestInFlight = false;
+
+        if (!cancelled && isInitialLoad) {
           setLoadingMessages(false);
         }
       }
@@ -225,7 +246,7 @@ export function DiscussionWorkspace({
     void loadMessages();
     const intervalId = window.setInterval(() => {
       void loadMessages();
-    }, 2500);
+    }, 5000);
 
     return () => {
       cancelled = true;
@@ -572,15 +593,22 @@ export function DiscussionWorkspace({
       return;
     }
 
+    const roomName = roomNameDraft.trim();
+
+    if (!roomName) {
+      setRoomError("Room name is required.");
+      return;
+    }
+
     setSubmittingRoom(true);
-    setError("");
+    setRoomError("");
 
     try {
       const response = await fetch("/api/discussion/rooms", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: roomNameDraft,
+          name: roomName,
           memberUserIds: selectedMemberIds,
         }),
       });
@@ -599,7 +627,7 @@ export function DiscussionWorkspace({
       setSelectedMemberIds([]);
       setNewRoomModalOpen(false);
     } catch (roomError) {
-      setError(
+      setRoomError(
         roomError instanceof Error ? roomError.message : "Unable to create room.",
       );
     } finally {
@@ -763,6 +791,7 @@ export function DiscussionWorkspace({
               onClick={() => {
                 setRoomNameDraft("");
                 setSelectedMemberIds([]);
+                setRoomError("");
                 setNewRoomModalOpen(true);
               }}
               className="rounded-full bg-[color:var(--accent)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#214930]"
@@ -1284,44 +1313,73 @@ export function DiscussionWorkspace({
       {newRoomModalOpen ? (
         <ModalShell
           title="New discussion room"
-          onClose={() => setNewRoomModalOpen(false)}
-        >
-          <label className="block text-sm font-medium">
-            Room name
-            <input
-              value={roomNameDraft}
-              onChange={(event) => setRoomNameDraft(event.target.value)}
-              className="mt-2 h-12 w-full rounded-2xl border border-[var(--border)] bg-[color:var(--background)] px-4"
-            />
-          </label>
-          <UserSelectionList
-            users={users}
-            selectedIds={selectedMemberIds}
-            onToggle={(userId) =>
-              setSelectedMemberIds((current) =>
-                current.includes(userId)
-                  ? current.filter((id) => id !== userId)
-                  : [...current, userId],
-              )
+          onClose={() => {
+            if (!submittingRoom) {
+              setNewRoomModalOpen(false);
             }
-          />
-          <div className="mt-5 flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={() => setNewRoomModalOpen(false)}
-              className="rounded-2xl border border-[var(--border)] px-4 py-2 text-sm font-semibold"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={() => void createRoom()}
-              disabled={submittingRoom}
-              className="rounded-2xl bg-[color:var(--accent)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-70"
-            >
-              Create room
-            </button>
-          </div>
+          }}
+        >
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void createRoom();
+            }}
+          >
+            <label className="block text-sm font-medium">
+              Room name
+              <input
+                value={roomNameDraft}
+                onChange={(event) => {
+                  setRoomNameDraft(event.target.value);
+                  if (roomError) {
+                    setRoomError("");
+                  }
+                }}
+                autoFocus
+                disabled={submittingRoom}
+                className="mt-2 h-12 w-full rounded-2xl border border-[var(--border)] bg-[color:var(--background)] px-4 outline-none focus:border-[color:var(--accent)] disabled:opacity-60"
+              />
+            </label>
+
+            <div className="mt-4 text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--muted)]">
+              Members ({selectedMemberIds.length})
+            </div>
+            <UserSelectionList
+              users={users}
+              selectedIds={selectedMemberIds}
+              onToggle={(userId) =>
+                setSelectedMemberIds((current) =>
+                  current.includes(userId)
+                    ? current.filter((id) => id !== userId)
+                    : [...current, userId],
+                )
+              }
+            />
+
+            {roomError ? (
+              <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {roomError}
+              </div>
+            ) : null}
+
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setNewRoomModalOpen(false)}
+                disabled={submittingRoom}
+                className="rounded-2xl border border-[var(--border)] px-4 py-2 text-sm font-semibold disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submittingRoom || !roomNameDraft.trim()}
+                className="min-w-32 rounded-2xl bg-[color:var(--accent)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {submittingRoom ? "Creating..." : "Create room"}
+              </button>
+            </div>
+          </form>
         </ModalShell>
       ) : null}
 

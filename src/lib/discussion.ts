@@ -12,17 +12,10 @@ import type {
   ManagedUser,
 } from "@/lib/types";
 
-type SqlRoomRow = {
-  id: string;
+type SqlRoomMemberRow = {
+  roomId: string;
+  userId: string;
   name: string;
-  createdByUserId: string | null;
-  memberUserIds: string[] | null;
-  members: Prisma.JsonValue;
-  memberCount: number | bigint;
-  activeUserIds: string[] | null;
-  createdAt: Date;
-  updatedAt: Date;
-  lastMessageAt: Date;
 };
 
 type SqlAttachmentRow = {
@@ -52,101 +45,72 @@ export type DiscussionUploadAttachment = {
 };
 
 const DISCUSSION_ROOM_PRESENCE_TTL_MS = 75_000;
+const DISCUSSION_TRANSACTION_OPTIONS = {
+  maxWait: 10_000,
+  timeout: 20_000,
+};
 
 export async function getDiscussionRoomsForUser(
   user: SessionUser,
 ): Promise<DiscussionRoom[]> {
   try {
     await ensureDatabaseConnected();
-    await pruneDiscussionRoomPresence();
+    const rooms = await prisma.discussionRoom.findMany({
+      where:
+        user.role === "admin"
+          ? undefined
+          : { members: { some: { userId: user.id } } },
+      orderBy: [{ lastMessageAt: "desc" }, { name: "asc" }],
+    });
 
-    const rows =
-      user.role === "admin"
-        ? await prisma.$queryRaw<SqlRoomRow[]>(Prisma.sql`
-            SELECT
-              r."id",
-              r."name",
-              r."createdByUserId",
-              COALESCE((
-                SELECT array_remove(array_agg(m."userId" ORDER BY u."name" ASC), NULL)
-                FROM "DiscussionRoomMember" m
-                INNER JOIN "User" u ON u."id" = m."userId"
-                WHERE m."roomId" = r."id"
-              ), ARRAY[]::text[]) AS "memberUserIds",
-              COALESCE((
-                SELECT json_agg(
-                  json_build_object(
-                    'id', u."id",
-                    'name', u."name"
-                  )
-                  ORDER BY u."name" ASC
-                )
-                FROM "DiscussionRoomMember" m
-                INNER JOIN "User" u ON u."id" = m."userId"
-                WHERE m."roomId" = r."id"
-              ), '[]'::json) AS "members",
-              COALESCE((
-                SELECT COUNT(*)::int
-                FROM "DiscussionRoomMember" m
-                WHERE m."roomId" = r."id"
-              ), 0) AS "memberCount",
-              COALESCE((
-                SELECT array_remove(array_agg(p."userId" ORDER BY p."joinedAt" ASC), NULL)
-                FROM "DiscussionRoomPresence" p
-                WHERE p."roomId" = r."id"
-                  AND p."lastSeenAt" >= ${new Date(Date.now() - DISCUSSION_ROOM_PRESENCE_TTL_MS)}
-              ), ARRAY[]::text[]) AS "activeUserIds",
-              r."createdAt",
-              r."updatedAt",
-              r."lastMessageAt"
-            FROM "DiscussionRoom" r
-            ORDER BY r."lastMessageAt" DESC, r."name" ASC
-          `)
-        : await prisma.$queryRaw<SqlRoomRow[]>(Prisma.sql`
-            SELECT
-              r."id",
-              r."name",
-              r."createdByUserId",
-              COALESCE((
-                SELECT array_remove(array_agg(m."userId" ORDER BY u."name" ASC), NULL)
-                FROM "DiscussionRoomMember" m
-                INNER JOIN "User" u ON u."id" = m."userId"
-                WHERE m."roomId" = r."id"
-              ), ARRAY[]::text[]) AS "memberUserIds",
-              COALESCE((
-                SELECT json_agg(
-                  json_build_object(
-                    'id', u."id",
-                    'name', u."name"
-                  )
-                  ORDER BY u."name" ASC
-                )
-                FROM "DiscussionRoomMember" m
-                INNER JOIN "User" u ON u."id" = m."userId"
-                WHERE m."roomId" = r."id"
-              ), '[]'::json) AS "members",
-              COALESCE((
-                SELECT COUNT(*)::int
-                FROM "DiscussionRoomMember" m
-                WHERE m."roomId" = r."id"
-              ), 0) AS "memberCount",
-              COALESCE((
-                SELECT array_remove(array_agg(p."userId" ORDER BY p."joinedAt" ASC), NULL)
-                FROM "DiscussionRoomPresence" p
-                WHERE p."roomId" = r."id"
-                  AND p."lastSeenAt" >= ${new Date(Date.now() - DISCUSSION_ROOM_PRESENCE_TTL_MS)}
-              ), ARRAY[]::text[]) AS "activeUserIds",
-              r."createdAt",
-              r."updatedAt",
-              r."lastMessageAt"
-            FROM "DiscussionRoom" r
-            INNER JOIN "DiscussionRoomMember" self_member
-              ON self_member."roomId" = r."id"
-             AND self_member."userId" = ${user.id}
-            ORDER BY r."lastMessageAt" DESC, r."name" ASC
-          `);
+    if (rooms.length === 0) {
+      return [];
+    }
 
-    return rows.map(mapDiscussionRoom);
+    const roomIds = rooms.map((room) => room.id);
+    const [memberRows, presenceRows] = await Promise.all([
+      prisma.$queryRaw<SqlRoomMemberRow[]>(Prisma.sql`
+        SELECT m."roomId", m."userId", u."name"
+        FROM "DiscussionRoomMember" m
+        INNER JOIN "User" u ON u."id" = m."userId"
+        WHERE m."roomId" IN (${Prisma.join(roomIds)})
+        ORDER BY m."roomId" ASC, u."name" ASC
+      `),
+      prisma.discussionRoomPresence.findMany({
+        where: {
+          roomId: { in: roomIds },
+          lastSeenAt: {
+            gte: new Date(Date.now() - DISCUSSION_ROOM_PRESENCE_TTL_MS),
+          },
+        },
+        select: { roomId: true, userId: true },
+        orderBy: { joinedAt: "asc" },
+      }),
+    ]);
+
+    const membersByRoom = Map.groupBy(memberRows, (member) => member.roomId);
+    const presenceByRoom = Map.groupBy(presenceRows, (presence) => presence.roomId);
+
+    return rooms.map((room) => {
+      const members = membersByRoom.get(room.id) ?? [];
+      const activeUsers = presenceByRoom.get(room.id) ?? [];
+
+      return {
+        id: room.id,
+        name: room.name,
+        memberUserIds: members.map((member) => member.userId),
+        members: members.map((member) => ({
+          id: member.userId,
+          name: member.name,
+        })),
+        memberCount: members.length,
+        activeUserIds: activeUsers.map((presence) => presence.userId),
+        createdByUserId: room.createdByUserId ?? "",
+        createdAt: room.createdAt.toISOString(),
+        updatedAt: room.updatedAt.toISOString(),
+        lastMessageAt: room.lastMessageAt.toISOString(),
+      };
+    });
   } catch (error) {
     if (!isDatabaseUnavailable(error)) {
       throw error;
@@ -331,38 +295,48 @@ export async function createDiscussionRoom(
 
   const roomId = randomUUID();
   const memberUserIds = uniqueIds(input.memberUserIds);
+  const [existingRoom, memberUsers] = await Promise.all([
+    prisma.discussionRoom.findFirst({
+      where: {
+        name: {
+          equals: name,
+          mode: "insensitive",
+        },
+      },
+      select: { id: true },
+    }),
+    memberUserIds.length > 0
+      ? prisma.user.findMany({
+          where: { id: { in: memberUserIds } },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([]),
+  ]);
 
-  await prisma.$transaction(async (tx) => {
-    await tx.$executeRaw(Prisma.sql`
-      INSERT INTO "DiscussionRoom" (
-        "id",
-        "name",
-        "createdByUserId",
-        "lastMessageAt",
-        "createdAt",
-        "updatedAt"
-      )
-      VALUES (
-        ${roomId},
-        ${name},
-        ${user.id},
-        NOW(),
-        NOW(),
-        NOW()
-      )
-    `);
+  if (existingRoom) {
+    throw new Error("A room with this name already exists.");
+  }
 
-    if (memberUserIds.length > 0) {
-      const values = Prisma.join(
-        memberUserIds.map((memberUserId) => Prisma.sql`(${roomId}, ${memberUserId}, NOW())`),
-      );
+  const validMemberIds = new Set(memberUsers.map((member) => member.id));
+  const nextMemberUserIds = memberUserIds.filter((id) => validMemberIds.has(id));
+  const createdRoom = await prisma.$transaction(async (tx) => {
+    const room = await tx.discussionRoom.create({
+      data: {
+        id: roomId,
+        name,
+        createdByUserId: user.id,
+      },
+    });
 
-      await tx.$executeRaw(Prisma.sql`
-        INSERT INTO "DiscussionRoomMember" ("roomId", "userId", "createdAt")
-        VALUES ${values}
-      `);
+    if (nextMemberUserIds.length > 0) {
+      await tx.discussionRoomMember.createMany({
+        data: nextMemberUserIds.map((userId) => ({ roomId, userId })),
+      });
     }
-  });
+
+    return room;
+  }, DISCUSSION_TRANSACTION_OPTIONS);
 
   await createAuditLog({
     actorUserId: user.id,
@@ -373,14 +347,18 @@ export async function createDiscussionRoom(
     targetLabel: name,
   });
 
-  const rooms = await getDiscussionRoomsForUser(user);
-  const room = rooms.find((item) => item.id === roomId);
-
-  if (!room) {
-    throw new Error("Unable to load the created room.");
-  }
-
-  return room;
+  return {
+    id: createdRoom.id,
+    name: createdRoom.name,
+    memberUserIds: nextMemberUserIds,
+    members: memberUsers,
+    memberCount: nextMemberUserIds.length,
+    activeUserIds: [],
+    createdByUserId: createdRoom.createdByUserId ?? "",
+    createdAt: createdRoom.createdAt.toISOString(),
+    updatedAt: createdRoom.updatedAt.toISOString(),
+    lastMessageAt: createdRoom.lastMessageAt.toISOString(),
+  };
 }
 
 export async function updateDiscussionRoomMembers(
@@ -415,7 +393,7 @@ export async function updateDiscussionRoomMembers(
       SET "updatedAt" = NOW()
       WHERE "id" = ${roomId}
     `);
-  });
+  }, DISCUSSION_TRANSACTION_OPTIONS);
 
   await createAuditLog({
     actorUserId: user.id,
@@ -546,7 +524,7 @@ export async function createDiscussionMessage(
       SET "lastMessageAt" = ${createdAt}, "updatedAt" = NOW()
       WHERE "id" = ${input.roomId}
     `);
-  });
+  }, DISCUSSION_TRANSACTION_OPTIONS);
 
   return {
     id: messageId,
@@ -602,39 +580,6 @@ function uniqueIds(values: string[]) {
   return Array.from(
     new Set(values.map((value) => value.trim()).filter(Boolean)),
   );
-}
-
-function mapDiscussionRoom(row: SqlRoomRow): DiscussionRoom {
-  return {
-    id: row.id,
-    name: row.name,
-    memberUserIds: row.memberUserIds ?? [],
-    members: mapDiscussionRoomMembers(row.members),
-    memberCount: Number(row.memberCount ?? 0),
-    activeUserIds: row.activeUserIds ?? [],
-    createdByUserId: row.createdByUserId ?? "",
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-    lastMessageAt: row.lastMessageAt.toISOString(),
-  };
-}
-
-function mapDiscussionRoomMembers(
-  value: Prisma.JsonValue,
-): Array<{ id: string; name: string }> {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value
-    .map((entry) => {
-      const member = entry as { id?: unknown; name?: unknown };
-      return {
-        id: String(member.id ?? ""),
-        name: String(member.name ?? ""),
-      };
-    })
-    .filter((member) => member.id && member.name);
 }
 
 function mapDiscussionMessage(row: SqlMessageRow): DiscussionMessage {

@@ -4,7 +4,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 const settingsId = "global";
-const defaultConnectionTimeoutMs = 2500;
+const defaultConnectionTimeoutMs = 15000;
 
 let connectionPromise: Promise<void> | null = null;
 
@@ -19,28 +19,38 @@ export async function ensureDatabaseConnected(
   timeoutMs = defaultConnectionTimeoutMs,
 ) {
   if (!connectionPromise) {
-    connectionPromise = prisma.$connect().finally(() => {
-      connectionPromise = null;
-    });
+    const connectionAttempt = prisma.$connect();
+    connectionPromise = connectionAttempt;
+    void connectionAttempt.then(
+      () => {
+        if (connectionPromise === connectionAttempt) {
+          connectionPromise = null;
+        }
+      },
+      () => {
+        if (connectionPromise === connectionAttempt) {
+          connectionPromise = null;
+        }
+      },
+    );
   }
+
+  const activeConnection = connectionPromise;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
   try {
     await Promise.race([
-      connectionPromise,
+      activeConnection,
       new Promise<never>((_, reject) => {
-        const timeoutId = setTimeout(() => {
+        timeoutId = setTimeout(() => {
           reject(new DatabaseConnectionTimeoutError());
         }, timeoutMs);
-
-        connectionPromise?.finally(() => {
-          clearTimeout(timeoutId);
-        });
       }),
     ]);
-  } catch (error) {
-    connectionPromise = null;
-    await prisma.$disconnect().catch(() => undefined);
-    throw error;
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
   }
 }
 
@@ -55,7 +65,11 @@ export function createSessionToken() {
 export function isDatabaseUnavailable(error: unknown) {
   return (
     (error instanceof Prisma.PrismaClientKnownRequestError &&
-      (error.code === "P1001" || error.code === "P2024")) ||
+      (error.code === "P1001" ||
+        error.code === "P1002" ||
+        error.code === "P1008" ||
+        error.code === "P2024" ||
+        isTransientPrismaEngineError(error))) ||
     (error instanceof Prisma.PrismaClientUnknownRequestError &&
       isTransientPrismaEngineError(error)) ||
     error instanceof Prisma.PrismaClientInitializationError ||
@@ -65,8 +79,9 @@ export function isDatabaseUnavailable(error: unknown) {
 
 function isTransientPrismaEngineError(error: unknown) {
   return (
-    error instanceof Prisma.PrismaClientUnknownRequestError &&
+    error instanceof Error &&
     (error.message.includes("Engine is not yet connected") ||
-      error.message.includes("Error in PostgreSQL connection"))
+      error.message.includes("Error in PostgreSQL connection") ||
+      error.message.includes("Timed out during query execution"))
   );
 }

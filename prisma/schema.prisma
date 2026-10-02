@@ -187,9 +187,23 @@ model InterviewRoomMessage {
   userName  String
   content   String
   createdAt DateTime        @default(now())
+  attachments InterviewRoomAttachment[]
 
   @@index([roomKey, channel, createdAt])
   @@index([eventType, eventId, createdAt])
+}
+
+model InterviewRoomAttachment {
+  id        String               @id @default(cuid())
+  messageId String
+  name      String
+  mimeType  String
+  sizeBytes Int
+  dataUrl   String
+  createdAt DateTime             @default(now())
+  message   InterviewRoomMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
 }
 
 model InterviewRoomPresence {

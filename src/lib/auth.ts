@@ -14,7 +14,6 @@ import {
   clearLoginRateLimit,
   getLoginRateLimitKey,
   getLoginRateLimitStatus,
-  pruneExpiredLoginRateLimits,
   recordFailedLoginAttempt,
 } from "@/lib/login-rate-limit";
 import { verifyPassword } from "@/lib/passwords";
@@ -103,7 +102,6 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
 export async function signIn(email: string, password: string) {
   try {
     await ensureDatabaseConnected();
-    await pruneExpiredLoginRateLimits();
   } catch (error) {
     if (!isDatabaseUnavailable(error)) {
       throw error;
@@ -222,16 +220,18 @@ export async function signIn(email: string, password: string) {
     },
   );
 
-  await clearLoginRateLimit(rateLimitKey);
-  await createAuditLog({
-    actorUserId: matchedUser.id,
-    actorEmail: matchedUser.email,
-    action: "auth.login_succeeded",
-    targetType: "session",
-    targetId: token,
-    targetLabel: matchedUser.email,
-    ipAddress,
-  });
+  await Promise.all([
+    clearLoginRateLimit(rateLimitKey),
+    createAuditLog({
+      actorUserId: matchedUser.id,
+      actorEmail: matchedUser.email,
+      action: "auth.login_succeeded",
+      targetType: "session",
+      targetId: token,
+      targetLabel: matchedUser.email,
+      ipAddress,
+    }),
+  ]);
   revalidateTag("users");
 
   return {

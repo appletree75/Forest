@@ -39,7 +39,7 @@ export async function POST(request: Request) {
       memberUserIds: Array.isArray(body.memberUserIds) ? body.memberUserIds : [],
     });
 
-    return NextResponse.json({ room });
+    return NextResponse.json({ room }, { status: 201 });
   } catch (error) {
     if (isDatabaseUnavailable(error)) {
       return NextResponse.json(

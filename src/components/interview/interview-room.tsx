@@ -1,11 +1,17 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type {
+  ChangeEvent,
+  ClipboardEvent,
+  DragEvent,
+  ReactNode,
+} from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import type {
   InterviewRoomContext,
+  InterviewRoomAttachment,
   InterviewRoomMessage,
   InterviewRoomPresence,
   SessionUser,
@@ -14,6 +20,17 @@ import type {
 type RoomUiMessage = InterviewRoomMessage & {
   pendingKey?: string;
   isLoading?: boolean;
+};
+
+type InterviewRoomUploadAttachment = Omit<
+  InterviewRoomAttachment,
+  "id" | "createdAt"
+>;
+
+type TeamAttachmentDraft = {
+  id: string;
+  file: File;
+  previewUrl: string;
 };
 
 type InterviewRoomProps = {
@@ -171,11 +188,14 @@ export function InterviewRoom({
     shouldScrollAiOnNextRenderRef.current = false;
   }, [aiMessages]);
 
-  const postMessage = (channel: "team" | "ai") => {
+  const postMessage = async (
+    channel: "team" | "ai",
+    attachments: InterviewRoomUploadAttachment[] = [],
+  ) => {
     const content = channel === "team" ? teamDraft.trim() : aiDraft.trim();
 
-    if (!content) {
-      return;
+    if (!content && attachments.length === 0) {
+      return false;
     }
 
     const pendingKey = crypto.randomUUID();
@@ -191,6 +211,11 @@ export function InterviewRoom({
       userName: user.name,
       content,
       createdAt: new Date().toISOString(),
+      attachments: attachments.map((attachment) => ({
+        ...attachment,
+        id: crypto.randomUUID(),
+        createdAt: new Date().toISOString(),
+      })),
       pendingKey,
     };
 
@@ -207,6 +232,7 @@ export function InterviewRoom({
             userName: "Nex AI",
             content: "",
             createdAt: new Date(Date.now() + 1).toISOString(),
+            attachments: [],
             pendingKey,
             isLoading: true,
           }
@@ -235,8 +261,7 @@ export function InterviewRoom({
       setAiSending(true);
     }
 
-    void (async () => {
-      try {
+    try {
         const response = await fetch("/api/interview-rooms", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -245,6 +270,7 @@ export function InterviewRoom({
             channel,
             content,
             roomLabel,
+            attachments,
           }),
         });
 
@@ -286,6 +312,7 @@ export function InterviewRoom({
 
           return nextMessages;
         });
+        return true;
       } catch (error) {
         setMessageError(
           error instanceof Error ? error.message : "Unable to post message.",
@@ -298,6 +325,7 @@ export function InterviewRoom({
         } else {
           setAiDraft(content);
         }
+        return false;
       } finally {
         if (channel === "team") {
           setTeamSending(false);
@@ -305,7 +333,6 @@ export function InterviewRoom({
           setAiSending(false);
         }
       }
-    })();
   };
 
   const saveContext = async () => {
@@ -437,29 +464,18 @@ export function InterviewRoom({
           onDraftChange={setAiDraft}
           onSend={() => postMessage("ai")}
           pending={aiSending}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              postMessage("ai");
-            }
-          }}
           scrollRef={aiScrollRef}
         />
         <ChatColumn
           title="Team chat"
           description="Fast room chat between users."
+          discussionStyle
           messages={teamMessages}
           currentUserId={user.id}
           draft={teamDraft}
           onDraftChange={setTeamDraft}
-          onSend={() => postMessage("team")}
+          onSend={(attachments) => postMessage("team", attachments)}
           pending={teamSending}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              postMessage("team");
-            }
-          }}
           scrollRef={teamScrollRef}
           onScroll={() => {
             shouldFollowTeamRef.current = isNearBottom(teamScrollRef.current);
@@ -569,12 +585,12 @@ function ChatColumn({
   headerAction,
   messages,
   currentUserId,
+  discussionStyle = false,
   groupAiReplies = false,
   draft,
   onDraftChange,
   onSend,
   pending,
-  onKeyDown,
   scrollRef,
   onScroll,
 }: {
@@ -583,12 +599,12 @@ function ChatColumn({
   headerAction?: ReactNode;
   messages: RoomUiMessage[];
   currentUserId: string;
+  discussionStyle?: boolean;
   groupAiReplies?: boolean;
   draft: string;
   onDraftChange: (value: string) => void;
-  onSend: () => void;
+  onSend: (attachments?: InterviewRoomUploadAttachment[]) => Promise<boolean>;
   pending: boolean;
-  onKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   scrollRef: React.RefObject<HTMLDivElement | null>;
   onScroll?: () => void;
 }) {
@@ -596,23 +612,180 @@ function ChatColumn({
     () => (groupAiReplies ? buildAiDisplayMessages(messages) : messages),
     [groupAiReplies, messages],
   );
+  const [attachments, setAttachments] = useState<TeamAttachmentDraft[]>([]);
+  const [preparingAttachments, setPreparingAttachments] = useState(false);
+  const [draggingFiles, setDraggingFiles] = useState(false);
+  const [imagePreview, setImagePreview] = useState<{ src: string; name: string } | null>(
+    null,
+  );
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [messageAlignment, setMessageAlignment] = useState<
+    "split" | "single-left" | "single-right"
+  >(() => {
+    if (typeof window === "undefined") {
+      return "split";
+    }
+
+    const saved = window.localStorage.getItem("nex-interview-team-alignment");
+    return saved === "single-left" || saved === "single-right" ? saved : "split";
+  });
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const attachmentsRef = useRef<TeamAttachmentDraft[]>([]);
+
+  useEffect(() => {
+    attachmentsRef.current = attachments;
+  }, [attachments]);
+
+  useEffect(() => {
+    return () => {
+      attachmentsRef.current.forEach((attachment) =>
+        URL.revokeObjectURL(attachment.previewUrl),
+      );
+    };
+  }, []);
+
+  const addFiles = (files: FileList | File[]) => {
+    const nextFiles = Array.from(files);
+    setAttachments((current) => [
+      ...current,
+      ...nextFiles.slice(0, Math.max(0, 8 - current.length)).map((file) => ({
+        id: crypto.randomUUID(),
+        file,
+        previewUrl: URL.createObjectURL(file),
+      })),
+    ]);
+  };
+
+  const removeAttachment = (id: string) => {
+    setAttachments((current) => {
+      const removed = current.find((attachment) => attachment.id === id);
+      if (removed) {
+        URL.revokeObjectURL(removed.previewUrl);
+      }
+      return current.filter((attachment) => attachment.id !== id);
+    });
+  };
+
+  const handleSend = async () => {
+    if (pending || preparingAttachments || (!draft.trim() && attachments.length === 0)) {
+      return;
+    }
+
+    setPreparingAttachments(true);
+    try {
+      const payload = await Promise.all(
+        attachments.map(async (attachment) => ({
+          name: attachment.file.name || "attachment",
+          mimeType: attachment.file.type || "application/octet-stream",
+          sizeBytes: attachment.file.size,
+          dataUrl: await interviewFileToDataUrl(attachment.file),
+        })),
+      );
+      const sent = await onSend(payload);
+
+      if (sent) {
+        setAttachments((current) => {
+          current.forEach((attachment) => URL.revokeObjectURL(attachment.previewUrl));
+          return [];
+        });
+      }
+    } finally {
+      setPreparingAttachments(false);
+    }
+  };
+
+  const handleMessageKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      void handleSend();
+    }
+  };
+
+  const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!discussionStyle) {
+      return;
+    }
+
+    const files = Array.from(event.clipboardData.items)
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => Boolean(file));
+    if (files.length > 0) {
+      event.preventDefault();
+      addFiles(files);
+    }
+  };
 
   return (
-    <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-[var(--border)] bg-white shadow-[0_16px_50px_rgba(24,34,24,0.06)]">
-      <div className="border-b border-[var(--border)] px-5 py-4">
+    <section
+      className={`flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border shadow-[0_16px_50px_rgba(24,34,24,0.06)] ${
+        discussionStyle
+          ? "border-[#cfdcd0] bg-[#edf5ea]"
+          : "border-[var(--border)] bg-white"
+      }`}
+    >
+      <div
+        className={`border-b px-5 py-4 ${
+          discussionStyle
+            ? "border-[#d8e4d8] bg-[#f7fbf5]"
+            : "border-[var(--border)]"
+        }`}
+      >
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="text-lg font-semibold">{title}</div>
-            <div className="mt-1 text-sm text-[color:var(--muted)]">{description}</div>
+            <div className={discussionStyle ? "text-[22px] font-semibold" : "text-lg font-semibold"}>
+              {title}
+            </div>
+            {!discussionStyle ? (
+              <div className="mt-1 text-sm text-[color:var(--muted)]">{description}</div>
+            ) : null}
           </div>
-          {headerAction}
+          <div className="flex items-center gap-2">
+            {headerAction}
+            {discussionStyle ? (
+              <button
+                type="button"
+                onClick={() => setSettingsOpen(true)}
+                className="flex h-11 w-11 items-center justify-center rounded-full border border-[#d8e4d8] bg-white text-[#355142] transition-colors hover:bg-[#f2f7f1]"
+                aria-label="Team Chat settings"
+                title="Team Chat settings"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-5 w-5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33A1.65 1.65 0 0 0 14 20.83V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82A1.65 1.65 0 0 0 3.17 14H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 8.92 4 1.65 1.65 0 0 0 10 2.49V2.4a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 4a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.12.61.66 1.05 1.29 1.05H21a2 2 0 1 1 0 4h-.09c-.63 0-1.17.44-1.51 1z" />
+                </svg>
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
       <div
         ref={scrollRef}
         onScroll={onScroll}
         className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-5"
+        style={
+          discussionStyle
+            ? {
+                backgroundColor: "#d9e8cd",
+                backgroundImage:
+                  "radial-gradient(circle at 20px 20px, rgba(112,144,97,0.10) 1.6px, transparent 0), radial-gradient(circle at 64px 48px, rgba(112,144,97,0.08) 1.6px, transparent 0), linear-gradient(135deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0) 65%)",
+                backgroundSize: "88px 88px, 88px 88px, 100% 100%",
+              }
+            : undefined
+        }
       >
+        {discussionStyle && displayMessages.length === 0 ? (
+          <div className="rounded-[20px] border border-dashed border-[#d8e4d8] bg-white/88 px-4 py-5 text-sm text-[#6d7f70]">
+            No discussion yet.
+          </div>
+        ) : null}
         {displayMessages.map((message) => {
           const isOwnMessage =
             message.channel === "team" &&
@@ -622,6 +795,102 @@ function ChatColumn({
           const isAiAnswer = message.channel === "ai" && message.role === "assistant";
           const alignmentClass = isOwnMessage || isAiPrompt ? "justify-end" : "justify-start";
           const widthClass = isAiAnswer ? "w-full max-w-full" : "max-w-[92%]";
+
+          if (discussionStyle) {
+            const alignRight =
+              messageAlignment === "single-right" ||
+              (messageAlignment === "split" && isOwnMessage);
+            const messageAttachments = message.attachments ?? [];
+            const imageAttachments = messageAttachments.filter((attachment) =>
+              attachment.mimeType.startsWith("image/"),
+            );
+            const fileAttachments = messageAttachments.filter(
+              (attachment) => !attachment.mimeType.startsWith("image/"),
+            );
+
+            return (
+              <div key={message.id} className={`flex ${alignRight ? "justify-end" : "justify-start"}`}>
+                <div
+                  className={`flex max-w-[78%] items-end gap-2 ${
+                    alignRight ? "flex-row-reverse" : ""
+                  }`}
+                >
+                  <div
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white shadow-[0_8px_20px_rgba(24,34,24,0.08)]"
+                    style={{
+                      backgroundColor: isOwnMessage
+                        ? "#6fb37a"
+                        : getInterviewAvatarTone(message.userName),
+                    }}
+                  >
+                    {getInterviewInitials(message.userName)}
+                  </div>
+                  <div
+                    className={`rounded-[22px] px-4 py-3 text-[#213025] shadow-[0_8px_20px_rgba(24,34,24,0.05)] ${
+                      isOwnMessage
+                        ? "rounded-br-[8px] bg-[#eefddc]"
+                        : "rounded-bl-[8px] bg-white"
+                    }`}
+                  >
+                    {imageAttachments.length > 0 ? (
+                      <div className="mb-2 grid max-w-md grid-cols-2 gap-1.5">
+                        {imageAttachments.map((attachment) => (
+                          <button
+                            key={attachment.id}
+                            type="button"
+                            onClick={() =>
+                              setImagePreview({
+                                src: attachment.dataUrl,
+                                name: attachment.name,
+                              })
+                            }
+                            className="overflow-hidden rounded-[16px] bg-black/5"
+                          >
+                            <img
+                              src={attachment.dataUrl}
+                              alt={attachment.name}
+                              className="h-32 w-full object-cover transition-opacity hover:opacity-90"
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                    {fileAttachments.length > 0 ? (
+                      <div className="mb-2 space-y-1.5">
+                        {fileAttachments.map((attachment) => (
+                          <a
+                            key={attachment.id}
+                            href={attachment.dataUrl}
+                            download={attachment.name}
+                            className="flex min-w-48 items-center justify-between gap-4 rounded-[14px] bg-black/5 px-3 py-2 text-sm hover:bg-black/10"
+                          >
+                            <span className="truncate">{attachment.name}</span>
+                            <span className="shrink-0 text-xs opacity-65">
+                              {formatInterviewBytes(attachment.sizeBytes)}
+                            </span>
+                          </a>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="flex items-end justify-between gap-3">
+                      {message.content ? (
+                        <div className="min-w-0 whitespace-pre-wrap text-[15px] leading-6">
+                          {message.content}
+                        </div>
+                      ) : null}
+                      <div
+                        className={`shrink-0 text-[11px] ${
+                          isOwnMessage ? "text-[#668669]" : "text-[#849383]"
+                        }`}
+                      >
+                        {formatInterviewMessageTime(message.createdAt)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          }
 
           return (
             <div
@@ -659,34 +928,231 @@ function ChatColumn({
           );
         })}
       </div>
-      <div className="border-t border-[var(--border)] px-5 py-4">
-        <div className="flex items-end gap-3">
+      <div
+        onDragOver={(event) => {
+          if (discussionStyle) {
+            event.preventDefault();
+            setDraggingFiles(true);
+          }
+        }}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            setDraggingFiles(false);
+          }
+        }}
+        onDrop={(event: DragEvent<HTMLDivElement>) => {
+          if (!discussionStyle) {
+            return;
+          }
+          event.preventDefault();
+          setDraggingFiles(false);
+          if (event.dataTransfer.files.length > 0) {
+            addFiles(event.dataTransfer.files);
+          }
+        }}
+        className={`border-t px-5 py-4 ${
+          discussionStyle
+            ? `border-[#d8e4d8] ${draggingFiles ? "bg-emerald-50" : "bg-[#f7fbf5]"}`
+            : "border-[var(--border)]"
+        }`}
+      >
+        {discussionStyle && attachments.length > 0 ? (
+          <div className="mb-3 flex flex-wrap gap-2">
+            {attachments.map((attachment) => (
+              <div
+                key={attachment.id}
+                className="flex items-center gap-2 rounded-[18px] border border-[#d8e4d8] bg-white px-3 py-2"
+              >
+                {attachment.file.type.startsWith("image/") ? (
+                  <img
+                    src={attachment.previewUrl}
+                    alt={attachment.file.name}
+                    className="h-11 w-11 rounded-xl object-cover"
+                  />
+                ) : null}
+                <div className="min-w-0">
+                  <div className="max-w-40 truncate text-sm">
+                    {attachment.file.name || "attachment"}
+                  </div>
+                  <div className="text-xs text-[#748375]">
+                    {formatInterviewBytes(attachment.file.size)}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removeAttachment(attachment.id)}
+                  className="text-xs font-semibold text-rose-500 hover:text-rose-600"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <div
+          className={`flex items-center gap-3 ${
+            discussionStyle
+              ? "min-h-[46px] rounded-[24px] border border-[#d8e4d8] bg-white px-2.5 py-1 shadow-[0_8px_24px_rgba(24,34,24,0.05)]"
+              : "items-end"
+          }`}
+        >
+          {discussionStyle ? (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#7a8b7d] transition-colors hover:bg-[#f2f7f1] hover:text-[#214930]"
+              aria-label="Attach files"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                className="h-5 w-5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.9"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M21.44 11.05 12.25 20.24a6 6 0 0 1-8.49-8.49l9.2-9.19a4 4 0 1 1 5.65 5.66l-9.2 9.19a2 2 0 0 1-2.82-2.83l8.48-8.48" />
+              </svg>
+            </button>
+          ) : null}
           <textarea
             value={draft}
             onChange={(event) => onDraftChange(event.target.value)}
-            onKeyDown={onKeyDown}
-            rows={3}
-            className="min-h-[92px] flex-1 rounded-2xl border border-[var(--border)] bg-[color:var(--background)] px-3 py-3 text-sm outline-none"
-            placeholder="Type a message..."
+            onPaste={handlePaste}
+            onKeyDown={handleMessageKeyDown}
+            rows={discussionStyle ? 1 : 3}
+            className={
+              discussionStyle
+                ? "max-h-40 min-h-[22px] flex-1 resize-none overflow-y-auto bg-transparent px-1 py-[3px] text-sm leading-5 outline-none placeholder:text-[#9aa89b]"
+                : "min-h-[92px] flex-1 rounded-2xl border border-[var(--border)] bg-[color:var(--background)] px-3 py-3 text-sm outline-none"
+            }
+            placeholder={discussionStyle ? "Write a message..." : "Type a message..."}
           />
           <button
             type="button"
-            onClick={onSend}
-            disabled={pending || !draft.trim()}
-            className="flex h-8 w-14 items-center justify-center rounded-lg bg-[color:var(--accent)] px-2 text-xs font-semibold text-white disabled:opacity-60"
+            onClick={() => void handleSend()}
+            disabled={
+              pending ||
+              preparingAttachments ||
+              (!draft.trim() && attachments.length === 0)
+            }
+            className={`flex h-8 items-center justify-center bg-[color:var(--accent)] text-white disabled:opacity-60 ${
+              discussionStyle
+                ? "w-8 shrink-0 rounded-full transition-colors hover:bg-[#214930]"
+                : "w-14 rounded-lg px-2 text-xs font-semibold"
+            }`}
           >
-            {pending ? (
+            {pending || preparingAttachments ? (
               <span className="inline-flex items-center gap-1.5" aria-label="Sending">
                 <span className="h-2 w-2 animate-bounce rounded-full bg-white [animation-delay:-0.2s]" />
                 <span className="h-2 w-2 animate-bounce rounded-full bg-white [animation-delay:-0.1s]" />
                 <span className="h-2 w-2 animate-bounce rounded-full bg-white" />
               </span>
             ) : (
-              "Send"
+              discussionStyle ? (
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 24 24"
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M5 12h13" />
+                  <path d="m13 6 6 6-6 6" />
+                </svg>
+              ) : (
+                "Send"
+              )
             )}
           </button>
         </div>
+        {discussionStyle ? (
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            hidden
+            onChange={(event: ChangeEvent<HTMLInputElement>) => {
+              if (event.target.files?.length) {
+                addFiles(event.target.files);
+              }
+              event.target.value = "";
+            }}
+          />
+        ) : null}
       </div>
+
+      {settingsOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(18,26,19,0.38)] p-4">
+          <div className="w-full max-w-md rounded-[28px] border border-[#d8e4d8] bg-white p-5 shadow-[0_24px_80px_rgba(18,26,19,0.18)]">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h3 className="text-xl font-semibold">Team Chat settings</h3>
+                <p className="mt-1 text-sm text-[color:var(--muted)]">
+                  Choose how messages are aligned in this window.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSettingsOpen(false)}
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-[#d8e4d8] bg-[#f7fbf5] text-xl"
+                aria-label="Close settings"
+              >
+                ×
+              </button>
+            </div>
+            <div className="mt-5 grid grid-cols-3 gap-2">
+              {([
+                ["single-left", "Left"],
+                ["split", "Split"],
+                ["single-right", "Right"],
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => {
+                    setMessageAlignment(value);
+                    window.localStorage.setItem("nex-interview-team-alignment", value);
+                  }}
+                  className={`rounded-[18px] border px-3 py-4 text-sm font-semibold transition-colors ${
+                    messageAlignment === value
+                      ? "border-[#8bb693] bg-[#e7f3ea] text-[#214930]"
+                      : "border-[#d8e4d8] bg-white text-[#6d7f70] hover:bg-[#f2f7f1]"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(false)}
+              className="mt-5 w-full rounded-2xl bg-[color:var(--accent)] px-4 py-2.5 text-sm font-semibold text-white"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {imagePreview ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-[rgba(12,18,14,0.82)] p-4"
+          onClick={() => setImagePreview(null)}
+        >
+          <div className="relative max-h-[92vh] max-w-[92vw]">
+            <img
+              src={imagePreview.src}
+              alt={imagePreview.name}
+              className="max-h-[88vh] max-w-[90vw] rounded-[20px] object-contain"
+            />
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -850,4 +1316,59 @@ function isMatchingPendingPrompt(
   const pendingTime = new Date(pendingMessage.createdAt).getTime();
 
   return Math.abs(serverTime - pendingTime) <= 10000;
+}
+
+function getInterviewInitials(name: string) {
+  const initials = name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+
+  return initials || "?";
+}
+
+function getInterviewAvatarTone(name: string) {
+  const tones = ["#668f72", "#587d80", "#8a735e", "#77709a", "#8a6675"];
+  const hash = Array.from(name).reduce(
+    (value, character) => value + character.charCodeAt(0),
+    0,
+  );
+
+  return tones[hash % tones.length];
+}
+
+function formatInterviewMessageTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function interviewFileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(new Error("Unable to read the attachment."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function formatInterviewBytes(bytes: number) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
