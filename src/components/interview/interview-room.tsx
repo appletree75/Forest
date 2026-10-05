@@ -71,6 +71,7 @@ export function InterviewRoom({
   const [sharedNoteSaved, setSharedNoteSaved] = useState(false);
   const [sidebarToolsTarget, setSidebarToolsTarget] = useState<HTMLElement | null>(null);
   const sharedNoteEditingRef = useRef(false);
+  const leaveTimeoutRef = useRef<number | null>(null);
   const teamScrollRef = useRef<HTMLDivElement | null>(null);
   const aiScrollRef = useRef<HTMLDivElement | null>(null);
   const shouldScrollTeamOnNextRenderRef = useRef(false);
@@ -111,6 +112,11 @@ export function InterviewRoom({
     : "Local interview room";
 
   useEffect(() => {
+    if (leaveTimeoutRef.current !== null) {
+      window.clearTimeout(leaveTimeoutRef.current);
+      leaveTimeoutRef.current = null;
+    }
+
     const touchPresence = async () => {
       if (document.visibilityState === "hidden") {
         return;
@@ -142,7 +148,20 @@ export function InterviewRoom({
       });
     }, 15000);
 
-    return () => window.clearInterval(heartbeatId);
+    const handlePageHide = () => {
+      leaveInterviewRoom(roomKey);
+    };
+
+    window.addEventListener("pagehide", handlePageHide);
+
+    return () => {
+      window.clearInterval(heartbeatId);
+      window.removeEventListener("pagehide", handlePageHide);
+      leaveTimeoutRef.current = window.setTimeout(() => {
+        leaveInterviewRoom(roomKey);
+        leaveTimeoutRef.current = null;
+      }, 100);
+    };
   }, [roomKey]);
 
   useEffect(() => {
@@ -194,7 +213,7 @@ export function InterviewRoom({
       void syncRoom().catch(() => {
         setRoomDegraded(true);
       });
-    }, 4000);
+    }, 2000);
 
     return () => window.clearInterval(intervalId);
   }, [contextModalOpen, roomKey]);
@@ -442,7 +461,10 @@ export function InterviewRoom({
       <div className="flex flex-wrap items-center gap-3 px-1">
         <button
           type="button"
-          onClick={() => router.back()}
+          onClick={() => {
+            leaveInterviewRoom(roomKey);
+            router.back();
+          }}
           aria-label="Back"
           className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border)] bg-white text-[color:var(--foreground)] shadow-[0_6px_18px_rgba(24,34,24,0.05)] transition hover:border-[color:var(--accent)] hover:text-[color:var(--accent)]"
         >
@@ -1494,6 +1516,15 @@ function isMatchingPendingPrompt(
   const pendingTime = new Date(pendingMessage.createdAt).getTime();
 
   return Math.abs(serverTime - pendingTime) <= 10000;
+}
+
+function leaveInterviewRoom(roomKey: string) {
+  void fetch("/api/interview-rooms", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ roomKey }),
+    keepalive: true,
+  }).catch(() => undefined);
 }
 
 function getInterviewInitials(name: string) {

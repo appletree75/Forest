@@ -148,6 +148,17 @@ export async function touchInterviewRoomPresence(input: {
   });
 }
 
+export async function removeInterviewRoomPresence(roomKey: string, userId: string) {
+  await ensureDatabaseConnected();
+
+  await prisma.interviewRoomPresence.deleteMany({
+    where: {
+      roomKey,
+      userId,
+    },
+  });
+}
+
 export async function pruneInterviewRoomPresence() {
   await ensureDatabaseConnected();
 

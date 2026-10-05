@@ -7,22 +7,31 @@ import type {
   ImportedCalendarEventOverride,
 } from "@/lib/types";
 
+const ICS_FETCH_TIMEOUT_MS = 10000;
+const ICS_FETCH_ATTEMPTS = 3;
+const ICS_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+type CachedIcsFeed = {
+  text: string;
+  updatedAt: number;
+};
+
+const globalForIcsFeeds = globalThis as unknown as {
+  nexIcsFeedCache?: Map<string, CachedIcsFeed>;
+  nexIcsFeedRequests?: Map<string, Promise<string>>;
+};
+
+const icsFeedCache = globalForIcsFeeds.nexIcsFeedCache ?? new Map();
+const icsFeedRequests = globalForIcsFeeds.nexIcsFeedRequests ?? new Map();
+
+globalForIcsFeeds.nexIcsFeedCache = icsFeedCache;
+globalForIcsFeeds.nexIcsFeedRequests = icsFeedRequests;
+
 export async function importIcsEventsForSources(sources: IcsCalendarSource[]) {
   const results = await Promise.all(
     sources.map(async (source) => {
       try {
-        const response = await fetch(source.url, {
-          cache: "no-store",
-          headers: {
-            Accept: "text/calendar,text/plain;q=0.9,*/*;q=0.8",
-          },
-        });
-
-        if (!response.ok) {
-          return [] as ImportedCalendarEvent[];
-        }
-
-        const text = await response.text();
+        const text = await getIcsFeed(source.url);
         return parseIcsCalendar(text, source);
       } catch {
         return [] as ImportedCalendarEvent[];
@@ -31,6 +40,91 @@ export async function importIcsEventsForSources(sources: IcsCalendarSource[]) {
   );
 
   return results.flat();
+}
+
+async function getIcsFeed(url: string) {
+  const activeRequest = icsFeedRequests.get(url);
+
+  if (activeRequest) {
+    return activeRequest;
+  }
+
+  const request = fetchIcsFeedWithFallback(url).finally(() => {
+    if (icsFeedRequests.get(url) === request) {
+      icsFeedRequests.delete(url);
+    }
+  });
+
+  icsFeedRequests.set(url, request);
+  return request;
+}
+
+async function fetchIcsFeedWithFallback(url: string) {
+  const cached = getUsableCachedFeed(url);
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < ICS_FETCH_ATTEMPTS; attempt += 1) {
+    try {
+      const text = await fetchIcsFeed(url);
+      icsFeedCache.set(url, { text, updatedAt: Date.now() });
+      return text;
+    } catch (error) {
+      lastError = error;
+
+      if (cached) {
+        return cached.text;
+      }
+
+      if (attempt < ICS_FETCH_ATTEMPTS - 1) {
+        await waitForRetry(200 * (attempt + 1));
+      }
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Unable to load ICS feed.");
+}
+
+async function fetchIcsFeed(url: string) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ICS_FETCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      cache: "no-store",
+      signal: controller.signal,
+      headers: {
+        Accept: "text/calendar,text/plain;q=0.9,*/*;q=0.8",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`ICS provider returned ${response.status}.`);
+    }
+
+    const text = await response.text();
+
+    if (!text.includes("BEGIN:VCALENDAR")) {
+      throw new Error("ICS provider returned an invalid calendar document.");
+    }
+
+    return text;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function getUsableCachedFeed(url: string) {
+  const cached = icsFeedCache.get(url);
+
+  if (!cached || Date.now() - cached.updatedAt > ICS_CACHE_MAX_AGE_MS) {
+    return null;
+  }
+
+  return cached;
+}
+
+function waitForRetry(delayMs: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, delayMs));
 }
 
 export function applyImportedEventOverrides(

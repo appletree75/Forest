@@ -7,6 +7,7 @@ import {
   emptyInterviewRoomContext,
   getInterviewRoomState,
   parseInterviewRoomKey,
+  removeInterviewRoomPresence,
   touchInterviewRoomPresence,
   updateInterviewRoomSharedNote,
   upsertInterviewRoomContext,
@@ -189,6 +190,32 @@ export async function PATCH(request: Request) {
     }
 
     return NextResponse.json({ ok: false, degraded: true });
+  }
+}
+
+export async function DELETE(request: Request) {
+  const user = await getSessionUser();
+
+  if (!user) {
+    return NextResponse.json({ message: "Unauthorized." }, { status: 401 });
+  }
+
+  const body = (await request.json()) as { roomKey?: string };
+  const roomKey = body.roomKey?.trim() || "";
+
+  if (!roomKey) {
+    return NextResponse.json({ message: "Room key is required." }, { status: 400 });
+  }
+
+  try {
+    await removeInterviewRoomPresence(roomKey, user.id);
+    return NextResponse.json({ ok: true, degraded: false });
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) {
+      throw error;
+    }
+
+    return NextResponse.json({ ok: false, degraded: true }, { status: 503 });
   }
 }
 

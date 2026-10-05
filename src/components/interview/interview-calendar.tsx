@@ -327,6 +327,13 @@ export function InterviewCalendar({
   const [enteringRoomKey, setEnteringRoomKey] = useState("");
   const autoRefreshBlocked =
     pending || modalOpen || importedModalOpen || icsModalOpen || addingIcsCalendar;
+  const missingImportedSourceKey = icsCalendarSources
+    .filter(
+      (source) => !importedEvents.some((event) => event.sourceId === source.id),
+    )
+    .map((source) => source.id)
+    .sort()
+    .join("|");
 
   const navigateToRoom = (roomPath: string, roomKey: string) => {
     setEnteringRoomKey(roomKey);
@@ -405,6 +412,40 @@ export function InterviewCalendar({
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [autoRefreshBlocked, router, startRefreshTransition]);
+
+  useEffect(() => {
+    if (!missingImportedSourceKey || autoRefreshBlocked) {
+      return;
+    }
+
+    let retryCount = 0;
+    let timeoutId: number | undefined;
+
+    const retryMissingSources = () => {
+      if (retryCount >= 3) {
+        return;
+      }
+
+      retryCount += 1;
+      startRefreshTransition(() => {
+        router.refresh();
+      });
+      timeoutId = window.setTimeout(retryMissingSources, 5000 * retryCount);
+    };
+
+    timeoutId = window.setTimeout(retryMissingSources, 2000);
+
+    return () => {
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [
+    autoRefreshBlocked,
+    missingImportedSourceKey,
+    router,
+    startRefreshTransition,
+  ]);
 
   useEffect(() => {
     if (currentUserRole !== "caller") {
