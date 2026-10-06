@@ -8,6 +8,7 @@ import {
 } from "@prisma/client";
 
 import { ensureDatabaseConnected } from "@/lib/database";
+import defaultInterviewAiPrompt from "@/data/default-interview-ai-prompt.json";
 import { prisma } from "@/lib/prisma";
 import type {
   InterviewRoomContext,
@@ -95,23 +96,27 @@ function mapMessage(row: {
   };
 }
 
-function mapContext(row: {
+type InterviewRoomContextRow = {
   roomKey: string;
   resume: string;
   jd: string;
   details: string;
   reference: string;
+  aiPrompt?: string;
   sharedNote: string;
   updatedBy: string | null;
   createdAt: Date;
   updatedAt: Date;
-}): InterviewRoomContext {
+};
+
+function mapContext(row: InterviewRoomContextRow): InterviewRoomContext {
   return {
     roomKey: row.roomKey,
     resume: row.resume,
     jd: row.jd,
     details: row.details,
     reference: row.reference,
+    aiPrompt: row.aiPrompt?.trim() || defaultInterviewAiPrompt.prompt,
     sharedNote: row.sharedNote,
     updatedBy: row.updatedBy ?? "",
     createdAt: row.createdAt.toISOString(),
@@ -176,7 +181,7 @@ export async function getInterviewRoomState(roomKey: string) {
   await pruneInterviewRoomPresence();
   await ensureDatabaseConnected();
 
-  const [presenceRows, messageRows, contextRow, attachmentRows] = await Promise.all([
+  const [presenceRows, messageRows, contextRows, attachmentRows] = await Promise.all([
     prisma.interviewRoomPresence.findMany({
       where: { roomKey },
       orderBy: [{ userRole: "asc" }, { userName: "asc" }],
@@ -186,9 +191,14 @@ export async function getInterviewRoomState(roomKey: string) {
       orderBy: { createdAt: "asc" },
       take: 400,
     }),
-    prisma.interviewRoomContext.findUnique({
-      where: { roomKey },
-    }),
+    prisma.$queryRaw<InterviewRoomContextRow[]>(Prisma.sql`
+      SELECT
+        "roomKey", "resume", "jd", "details", "reference", "aiPrompt",
+        "sharedNote", "updatedBy", "createdAt", "updatedAt"
+      FROM "InterviewRoomContext"
+      WHERE "roomKey" = ${roomKey}
+      LIMIT 1
+    `),
     prisma.$queryRaw<InterviewRoomAttachmentRow[]>(Prisma.sql`
       SELECT
         a."id",
@@ -215,7 +225,9 @@ export async function getInterviewRoomState(roomKey: string) {
     messages: messageRows.map((message) =>
       mapMessage(message, attachmentsByMessage.get(message.id)),
     ),
-    context: contextRow ? mapContext(contextRow) : emptyInterviewRoomContext(roomKey),
+    context: contextRows[0]
+      ? mapContext(contextRows[0])
+      : emptyInterviewRoomContext(roomKey),
   };
 }
 
@@ -226,6 +238,7 @@ export function emptyInterviewRoomContext(roomKey: string): InterviewRoomContext
     jd: "",
     details: "",
     reference: "",
+    aiPrompt: defaultInterviewAiPrompt.prompt,
     sharedNote: "",
     updatedBy: "",
     createdAt: new Date(0).toISOString(),
@@ -320,11 +333,12 @@ export async function upsertInterviewRoomContext(input: {
   jd: string;
   details: string;
   reference: string;
+  aiPrompt?: string;
   updatedBy: string;
 }) {
   await ensureDatabaseConnected();
 
-  const saved = await prisma.interviewRoomContext.upsert({
+  await prisma.interviewRoomContext.upsert({
     where: { roomKey: input.roomKey },
     update: {
       resume: input.resume.trim(),
@@ -343,8 +357,18 @@ export async function upsertInterviewRoomContext(input: {
     },
   });
 
+  if (input.aiPrompt !== undefined) {
+    await prisma.$executeRaw(Prisma.sql`
+      UPDATE "InterviewRoomContext"
+      SET "aiPrompt" = ${input.aiPrompt.trim()}
+      WHERE "roomKey" = ${input.roomKey}
+    `);
+  }
+
+  const saved = await getInterviewRoomContext(input.roomKey);
+
   revalidateTag(`room:${input.roomKey}`);
-  return mapContext(saved);
+  return saved;
 }
 
 export async function updateInterviewRoomSharedNote(input: {
@@ -354,7 +378,7 @@ export async function updateInterviewRoomSharedNote(input: {
 }) {
   await ensureDatabaseConnected();
 
-  const saved = await prisma.interviewRoomContext.upsert({
+  await prisma.interviewRoomContext.upsert({
     where: { roomKey: input.roomKey },
     update: {
       sharedNote: input.sharedNote.trim(),
@@ -367,6 +391,21 @@ export async function updateInterviewRoomSharedNote(input: {
     },
   });
 
+  const saved = await getInterviewRoomContext(input.roomKey);
+
   revalidateTag(`room:${input.roomKey}`);
-  return mapContext(saved);
+  return saved;
+}
+
+async function getInterviewRoomContext(roomKey: string) {
+  const rows = await prisma.$queryRaw<InterviewRoomContextRow[]>(Prisma.sql`
+    SELECT
+      "roomKey", "resume", "jd", "details", "reference", "aiPrompt",
+      "sharedNote", "updatedBy", "createdAt", "updatedAt"
+    FROM "InterviewRoomContext"
+    WHERE "roomKey" = ${roomKey}
+    LIMIT 1
+  `);
+
+  return rows[0] ? mapContext(rows[0]) : emptyInterviewRoomContext(roomKey);
 }

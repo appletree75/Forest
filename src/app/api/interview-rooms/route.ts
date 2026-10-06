@@ -23,6 +23,7 @@ async function sendDeepSeekMessage(input: {
     jd: string;
     details: string;
     reference: string;
+    aiPrompt: string;
   };
 }) {
   const selectedKey = await getSelectedApiKey();
@@ -44,30 +45,7 @@ async function sendDeepSeekMessage(input: {
       messages: [
         {
           role: "system",
-          content: `You are an AI interviewer speaking with recruiter interested in hiring candidate.
-
-Your task is as follows:
-Write a relevant answer for a question given to you.
-
-Ensure your response follows these rules:
-- Keep the summary to several paragraphs adjusting length depends on questions.
-- Avoid bullet points or section headers.
-- If technical Q/A, structure the answer - key answer, then explanation based on real experience of the profile
-
-Follow these style and tone guidelines in your response:
-- Use plain, everyday language
-- Direct and confident
-- Personal and human
-- Avoid hype or promotional language
-- Avoid deeply technical jargon
-- No buzzwords like "transformative" or "game-changer"
-- Avoid overly polished terms like "delves into", "showcasing", or "leverages"
-- Avoid cliches like "in the realm of", "ushering in", or "a new era of"
-- Don't use em dashes (-) or semicolons
-- Favor short, clear sentences over long compound ones
-
-Your goal is to achieve the following outcome:
-Make recruiter decide whether this candidate is suitable for this position.`,
+          content: input.context.aiPrompt,
         },
         {
           role: "user",
@@ -233,11 +211,29 @@ export async function PUT(request: Request) {
       jd?: string;
       details?: string;
       reference?: string;
+      aiPrompt?: string;
     };
     const roomKey = body.roomKey?.trim() || "";
 
     if (!roomKey) {
       return NextResponse.json({ message: "Room key is required." }, { status: 400 });
+    }
+
+    if (body.aiPrompt !== undefined && user.role !== "admin") {
+      return NextResponse.json(
+        { message: "Only an admin can modify the AI prompt." },
+        { status: 403 },
+      );
+    }
+
+    if (
+      body.aiPrompt !== undefined &&
+      (typeof body.aiPrompt !== "string" || body.aiPrompt.length > 100_000)
+    ) {
+      return NextResponse.json(
+        { message: "AI prompt must be text under 100,000 characters." },
+        { status: 400 },
+      );
     }
 
     const context = await upsertInterviewRoomContext({
@@ -246,6 +242,7 @@ export async function PUT(request: Request) {
       jd: body.jd ?? "",
       details: body.details ?? "",
       reference: body.reference ?? "",
+      aiPrompt: user.role === "admin" ? body.aiPrompt : undefined,
       updatedBy: user.name,
     });
 

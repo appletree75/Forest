@@ -397,6 +397,7 @@ export function InterviewRoom({
           jd: contextDraft.jd,
           details: contextDraft.details,
           reference: contextDraft.reference,
+          ...(user.role === "admin" ? { aiPrompt: contextDraft.aiPrompt } : {}),
         }),
       });
 
@@ -696,7 +697,7 @@ export function InterviewRoom({
 
       {contextModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,15,0.35)] p-4">
-          <div className="w-full max-w-4xl rounded-[28px] border border-[var(--border)] bg-white p-6 shadow-[0_24px_80px_rgba(24,34,24,0.2)]">
+          <div className="max-h-[calc(100vh-2rem)] w-full max-w-4xl overflow-y-auto rounded-[28px] border border-[var(--border)] bg-white p-6 shadow-[0_24px_80px_rgba(24,34,24,0.2)]">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="text-xs font-semibold uppercase tracking-[0.22em] text-[color:var(--muted)]">
@@ -746,6 +747,29 @@ export function InterviewRoom({
                 }
               />
             </div>
+
+            <label className="mt-5 block">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <span className="text-sm font-medium">AI prompt</span>
+                {user.role !== "admin" ? (
+                  <span className="text-xs text-[color:var(--muted)]">
+                    Only admins can edit
+                  </span>
+                ) : null}
+              </div>
+              <textarea
+                value={contextDraft.aiPrompt}
+                onChange={(event) =>
+                  setContextDraft((current) => ({
+                    ...current,
+                    aiPrompt: event.target.value,
+                  }))
+                }
+                readOnly={user.role !== "admin"}
+                rows={14}
+                className="min-h-64 w-full resize-y rounded-2xl border border-[var(--border)] bg-[color:var(--background)] px-3 py-3 font-mono text-sm leading-6 outline-none read-only:cursor-default read-only:opacity-75"
+              />
+            </label>
 
             <div className="mt-6 flex items-center justify-end gap-3">
               <button

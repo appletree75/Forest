@@ -1,0 +1,2 @@
+ALTER TABLE "InterviewRoomContext"
+ADD COLUMN IF NOT EXISTS "aiPrompt" TEXT NOT NULL DEFAULT '';
