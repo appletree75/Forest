@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 
+import { TranscriptionProviderModal } from "@/components/interview/transcription-provider-modal";
 import type {
   InterviewRoomContext,
   InterviewRoomAttachment,
@@ -33,6 +34,28 @@ type TeamAttachmentDraft = {
   id: string;
   file: File;
   previewUrl: string;
+};
+
+type AudioCaptureSource = "microphone" | "speaker";
+
+type ActiveAudioCapture = {
+  source: AudioCaptureSource;
+  stream: MediaStream;
+  recordingStream: MediaStream;
+  recorder: MediaRecorder | null;
+  segmentTimer: number | null;
+  restartTimer: number | null;
+  monitorContext: AudioContext | null;
+  monitorTimer: number | null;
+  realtimeConnection: RTCPeerConnection | null;
+  realtimeChannel: RTCDataChannel | null;
+  realtimeTimer: number | null;
+  realtimeTrack: MediaStreamTrack | null;
+  realtimeReady: boolean;
+  realtimeText: string;
+  realtimeDraftLine: string;
+  realtimeCleared: boolean;
+  running: boolean;
 };
 
 type InterviewRoomProps = {
@@ -58,6 +81,7 @@ export function InterviewRoom({
   const [roomContext, setRoomContext] = useState(initialContext);
   const [contextDraft, setContextDraft] = useState(initialContext);
   const [contextModalOpen, setContextModalOpen] = useState(false);
+  const [transcriptionSettingsOpen, setTranscriptionSettingsOpen] = useState(false);
   const [contextSaving, setContextSaving] = useState(false);
   const [pendingMessages, setPendingMessages] = useState<RoomUiMessage[]>([]);
   const [teamDraft, setTeamDraft] = useState("");
@@ -195,7 +219,7 @@ export function InterviewRoom({
 
       setRoomDegraded(false);
       setPresence(payload.presence);
-      setServerMessages(payload.messages);
+      setServerMessages((current) => mergeServerRoomMessages(current, payload.messages));
       setRoomContext(payload.context);
       if (!sharedNoteEditingRef.current) {
         setSharedNoteDraft(payload.context.sharedNote);
@@ -333,33 +357,17 @@ export function InterviewRoom({
         }
 
         setRoomDegraded(false);
+        setServerMessages((current) => {
+          return mergeServerRoomMessages(
+            current,
+            [payload.postedMessage, payload.assistantMessage].filter(
+              (message): message is InterviewRoomMessage => Boolean(message),
+            ),
+          );
+        });
         setPendingMessages((current) =>
           current.filter((message) => message.pendingKey !== pendingKey),
         );
-        setServerMessages((current) => {
-          const nextMessages = [...current];
-
-          if (
-            payload.postedMessage &&
-            !nextMessages.some((message) => message.id === payload.postedMessage?.id)
-          ) {
-            nextMessages.push(payload.postedMessage);
-          }
-
-          if (
-            payload.assistantMessage &&
-            !nextMessages.some((message) => message.id === payload.assistantMessage?.id)
-          ) {
-            nextMessages.push(payload.assistantMessage);
-          }
-
-          nextMessages.sort(
-            (left, right) =>
-              new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
-          );
-
-          return nextMessages;
-        });
         return true;
       } catch (error) {
         setMessageError(
@@ -607,20 +615,33 @@ export function InterviewRoom({
           title="AI room"
           description="Shared AI conversation visible to everyone in the room."
           headerAction={
-            <button
-              type="button"
-              onClick={() => {
-                setContextDraft(roomContext);
-                setContextModalOpen(true);
-              }}
-              className="rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm font-medium transition hover:bg-[color:var(--background)]"
-            >
-              AI context
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setContextDraft(roomContext);
+                  setContextModalOpen(true);
+                }}
+                className="rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm font-medium transition hover:bg-[color:var(--background)]"
+              >
+                AI context
+              </button>
+              {user.role === "admin" ? (
+                <button
+                  type="button"
+                  onClick={() => setTranscriptionSettingsOpen(true)}
+                  className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border)] bg-white transition hover:bg-[color:var(--background)]"
+                  aria-label="Transcription settings"
+                  title="Transcription settings"
+                >
+                  <SettingsIcon />
+                </button>
+              ) : null}
+            </div>
           }
           messages={aiMessages}
           currentUserId={user.id}
-          groupAiReplies
+          enableTranscription
           draft={aiDraft}
           onDraftChange={setAiDraft}
           onSend={() => postMessage("ai")}
@@ -791,6 +812,11 @@ export function InterviewRoom({
           </div>
         </div>
       ) : null}
+      {transcriptionSettingsOpen ? (
+        <TranscriptionProviderModal
+          onClose={() => setTranscriptionSettingsOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -821,7 +847,7 @@ function ChatColumn({
   messages,
   currentUserId,
   discussionStyle = false,
-  groupAiReplies = false,
+  enableTranscription = false,
   draft,
   onDraftChange,
   onSend,
@@ -835,7 +861,7 @@ function ChatColumn({
   messages: RoomUiMessage[];
   currentUserId: string;
   discussionStyle?: boolean;
-  groupAiReplies?: boolean;
+  enableTranscription?: boolean;
   draft: string;
   onDraftChange: (value: string) => void;
   onSend: (attachments?: InterviewRoomUploadAttachment[]) => Promise<boolean>;
@@ -843,10 +869,6 @@ function ChatColumn({
   scrollRef: React.RefObject<HTMLDivElement | null>;
   onScroll?: () => void;
 }) {
-  const displayMessages = useMemo(
-    () => (groupAiReplies ? buildAiDisplayMessages(messages) : messages),
-    [groupAiReplies, messages],
-  );
   const [attachments, setAttachments] = useState<TeamAttachmentDraft[]>([]);
   const [preparingAttachments, setPreparingAttachments] = useState(false);
   const [draggingFiles, setDraggingFiles] = useState(false);
@@ -858,11 +880,50 @@ function ChatColumn({
     "split" | "single-left" | "single-right"
   >("split");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const messageInputRef = useRef<HTMLTextAreaElement | null>(null);
   const attachmentsRef = useRef<TeamAttachmentDraft[]>([]);
+  const draftRef = useRef(draft);
+  const audioCapturesRef = useRef(new Map<AudioCaptureSource, ActiveAudioCapture>());
+  const transcriptionRequestsRef = useRef(new Set<AbortController>());
+  const transcriptionMountedRef = useRef(true);
+  const transcriptionSequenceRef = useRef<Record<AudioCaptureSource, number>>({
+    microphone: 0,
+    speaker: 0,
+  });
+  const nextTranscriptRef = useRef<Record<AudioCaptureSource, number>>({
+    microphone: 0,
+    speaker: 0,
+  });
+  const completedTranscriptsRef = useRef<Record<AudioCaptureSource, Map<number, string>>>(
+    { microphone: new Map(), speaker: new Map() },
+  );
+  const [transcriptionSupported, setTranscriptionSupported] = useState<
+    boolean | null
+  >(null);
+  const [activeCaptureSources, setActiveCaptureSources] = useState<
+    AudioCaptureSource[]
+  >([]);
+  const [transcriptionRequestCount, setTranscriptionRequestCount] = useState(0);
+  const [transcriptionError, setTranscriptionError] = useState("");
+  const [transcriptionStatus, setTranscriptionStatus] = useState("");
+  const [livePreview, setLivePreview] = useState<Record<AudioCaptureSource, string>>({
+    microphone: "",
+    speaker: "",
+  });
+  const startingCaptureSourcesRef = useRef(new Set<AudioCaptureSource>());
+  const [startingCaptureSources, setStartingCaptureSources] = useState<AudioCaptureSource[]>([]);
+  const [microphoneDevices, setMicrophoneDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedMicrophoneId, setSelectedMicrophoneId] = useState("");
+  const [microphoneLevel, setMicrophoneLevel] = useState(0);
+  const microphonePeakRef = useRef(0);
 
   useEffect(() => {
     attachmentsRef.current = attachments;
   }, [attachments]);
+
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
 
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
@@ -871,7 +932,6 @@ function ChatColumn({
         setMessageAlignment(saved);
       }
     });
-
     return () => window.cancelAnimationFrame(frameId);
   }, []);
 
@@ -882,6 +942,540 @@ function ChatColumn({
       );
     };
   }, []);
+
+  useEffect(() => {
+    if (!enableTranscription) {
+      return;
+    }
+    transcriptionMountedRef.current = true;
+    const audioCaptures = audioCapturesRef.current;
+    const transcriptionRequests = transcriptionRequestsRef.current;
+    const supportCheckFrame = window.requestAnimationFrame(() => {
+      setTranscriptionSupported(
+        Boolean(window.MediaRecorder && navigator.mediaDevices),
+      );
+    });
+
+    return () => {
+      window.cancelAnimationFrame(supportCheckFrame);
+      transcriptionMountedRef.current = false;
+      for (const capture of audioCaptures.values()) {
+        capture.running = false;
+        if (capture.segmentTimer !== null) {
+          window.clearTimeout(capture.segmentTimer);
+        }
+        if (capture.restartTimer !== null) {
+          window.clearTimeout(capture.restartTimer);
+        }
+        if (capture.monitorTimer !== null) {
+          window.clearInterval(capture.monitorTimer);
+        }
+        if (capture.realtimeTimer !== null) {
+          window.clearInterval(capture.realtimeTimer);
+        }
+        capture.realtimeChannel?.close();
+        capture.realtimeConnection?.close();
+        capture.realtimeTrack?.stop();
+        void capture.monitorContext?.close();
+        const recorder = capture.recorder;
+        if (recorder && recorder.state !== "inactive") {
+          recorder.onstop = null;
+          recorder.stop();
+        }
+        capture.stream.getTracks().forEach((track) => track.stop());
+      }
+      audioCaptures.clear();
+      for (const controller of transcriptionRequests) {
+        controller.abort();
+      }
+      transcriptionRequests.clear();
+    };
+  }, [enableTranscription]);
+
+  useEffect(() => {
+    if (!enableTranscription || !navigator.mediaDevices?.enumerateDevices) return;
+    let active = true;
+    const refreshMicrophones = () => {
+      void navigator.mediaDevices.enumerateDevices()
+        .then((devices) => {
+          if (active) setMicrophoneDevices(devices.filter((device) => device.kind === "audioinput"));
+        })
+        .catch(() => undefined);
+    };
+    refreshMicrophones();
+    navigator.mediaDevices.addEventListener("devicechange", refreshMicrophones);
+    return () => {
+      active = false;
+      navigator.mediaDevices.removeEventListener("devicechange", refreshMicrophones);
+    };
+  }, [enableTranscription]);
+
+  const appendTranscript = (source: AudioCaptureSource, text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed || !transcriptionMountedRef.current) {
+      return;
+    }
+    const label = source === "microphone" ? "Mic" : "Speaker";
+    const nextDraft = [draftRef.current.trimEnd(), `${label}: ${trimmed}`]
+      .filter(Boolean)
+      .join("\n");
+    updateCaptionInput(nextDraft);
+  };
+
+  const updateCaptionInput = (value: string) => {
+    draftRef.current = value;
+    if (messageInputRef.current) {
+      messageInputRef.current.value = value;
+      messageInputRef.current.scrollTop = messageInputRef.current.scrollHeight;
+    }
+    onDraftChange(value);
+  };
+
+  const updateRealtimeDraft = (capture: ActiveAudioCapture, text: string, final = false) => {
+    if (!transcriptionMountedRef.current) return;
+    const label = capture.source === "microphone" ? "Mic" : "Speaker";
+    const line = text.trim() ? `${label}: ${text.trim()}` : "";
+    const previous = capture.realtimeDraftLine;
+    let nextDraft = draftRef.current;
+    const position = previous ? nextDraft.lastIndexOf(previous) : -1;
+    if (
+      position >= 0 &&
+      (position === 0 || nextDraft[position - 1] === "\n") &&
+      (position + previous.length === nextDraft.length || nextDraft[position + previous.length] === "\n")
+    ) {
+      const before = nextDraft.slice(0, position);
+      const after = nextDraft.slice(position + previous.length);
+      nextDraft = before.endsWith("\n")
+        ? before.slice(0, -1) + after
+        : before + (after.startsWith("\n") ? after.slice(1) : after);
+    }
+    if (line) {
+      nextDraft = [nextDraft.trimEnd(), line].filter(Boolean).join("\n");
+    }
+    capture.realtimeDraftLine = final ? "" : line;
+    updateCaptionInput(nextDraft);
+  };
+
+  const transcribeAudioSegment = async (
+    source: AudioCaptureSource,
+    blob: Blob,
+  ) => {
+    const sequence = transcriptionSequenceRef.current[source]++;
+    const complete = (text: string) => {
+      const completed = completedTranscriptsRef.current[source];
+      completed.set(sequence, text);
+      while (completed.has(nextTranscriptRef.current[source])) {
+        const next = nextTranscriptRef.current[source]++;
+        const caption = completed.get(next) || "";
+        completed.delete(next);
+        if (caption) appendTranscript(source, caption);
+      }
+    };
+    if (blob.size < 800 || !transcriptionMountedRef.current) {
+      complete("");
+      return;
+    }
+    const controller = new AbortController();
+    transcriptionRequestsRef.current.add(controller);
+    setTranscriptionRequestCount((current) => current + 1);
+    setTranscriptionStatus("Transcribing audio...");
+    try {
+      const extension = blob.type.includes("mp4") ? "mp4" : "webm";
+      const formData = new FormData();
+      formData.append("audio", blob, `${source}.${extension}`);
+      formData.append("source", source);
+      formData.append("language", navigator.language || "en-US");
+      const response = await fetch("/api/transcription", {
+        method: "POST",
+        body: formData,
+        signal: controller.signal,
+      });
+      const payload = (await response.json()) as { text?: string; message?: string };
+      if (!response.ok) {
+        throw new Error(payload.message || "Unable to transcribe audio.");
+      }
+      complete(payload.text || "");
+      if (payload.text) {
+        setTranscriptionStatus("Caption added to the message field.");
+      } else {
+        setTranscriptionStatus(
+          source === "microphone" && microphonePeakRef.current < 0.015
+            ? "No microphone signal detected. Check the input meter or choose another microphone."
+            : "Audio was received, but no speech was recognized. Speak closer to the microphone and try again.",
+        );
+      }
+    } catch (error) {
+      complete("");
+      if (!controller.signal.aborted && transcriptionMountedRef.current) {
+        setTranscriptionStatus("");
+        setTranscriptionError(
+          error instanceof Error ? error.message : "Unable to transcribe audio.",
+        );
+      }
+    } finally {
+      transcriptionRequestsRef.current.delete(controller);
+      if (transcriptionMountedRef.current) {
+        setTranscriptionRequestCount((current) => Math.max(0, current - 1));
+      }
+    }
+  };
+
+  const clearAudioCaptureState = (source: AudioCaptureSource) => {
+    const capture = audioCapturesRef.current.get(source);
+    if (capture?.monitorTimer !== null && capture?.monitorTimer !== undefined) {
+      window.clearInterval(capture.monitorTimer);
+    }
+    void capture?.monitorContext?.close();
+    if (capture?.realtimeTimer !== null && capture?.realtimeTimer !== undefined) {
+      window.clearInterval(capture.realtimeTimer);
+    }
+    capture?.realtimeChannel?.close();
+    capture?.realtimeConnection?.close();
+    capture?.realtimeTrack?.stop();
+    audioCapturesRef.current.delete(source);
+    setActiveCaptureSources((current) => current.filter((item) => item !== source));
+    setLivePreview((current) => ({ ...current, [source]: "" }));
+    if (source === "microphone") setMicrophoneLevel(0);
+  };
+
+  const startRecorderSegment = (capture: ActiveAudioCapture) => {
+    if (!capture.running) {
+      return;
+    }
+    const chunks: BlobPart[] = [];
+    const mimeType = getSupportedAudioMimeType();
+    const recorder = new MediaRecorder(
+      capture.recordingStream,
+      mimeType ? { mimeType } : undefined,
+    );
+    capture.recorder = recorder;
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        chunks.push(event.data);
+      }
+    };
+    recorder.onerror = () => {
+      capture.running = false;
+      capture.stream.getTracks().forEach((track) => track.stop());
+      if (transcriptionMountedRef.current) {
+        setTranscriptionError(`Unable to record ${capture.source} audio.`);
+      }
+    };
+    recorder.onstop = () => {
+      if (capture.segmentTimer !== null) {
+        window.clearTimeout(capture.segmentTimer);
+        capture.segmentTimer = null;
+      }
+      capture.recorder = null;
+      const blob = new Blob(chunks, { type: recorder.mimeType || mimeType });
+      if (capture.running && !capture.realtimeReady) {
+        if (capture.recordingStream.getAudioTracks().some((track) => track.readyState !== "live")) {
+          setTranscriptionError(`${capture.source === "microphone" ? "Microphone" : "Speaker audio"} stopped unexpectedly. Start it again.`);
+          capture.stream.getTracks().forEach((track) => track.stop());
+          clearAudioCaptureState(capture.source);
+        } else {
+          try {
+            startRecorderSegment(capture);
+          } catch {
+            setTranscriptionError(`Unable to restart ${capture.source} recording.`);
+            capture.stream.getTracks().forEach((track) => track.stop());
+            clearAudioCaptureState(capture.source);
+          }
+        }
+      } else if (!capture.running) {
+        capture.stream.getTracks().forEach((track) => track.stop());
+        clearAudioCaptureState(capture.source);
+      }
+      void transcribeAudioSegment(capture.source, blob);
+    };
+    recorder.start();
+    capture.segmentTimer = window.setTimeout(() => {
+      if (recorder.state === "recording") {
+        recorder.stop();
+      }
+    }, 2_000);
+  };
+
+  const stopAudioCapture = (source: AudioCaptureSource) => {
+    const capture = audioCapturesRef.current.get(source);
+    if (!capture) {
+      return;
+    }
+    capture.running = false;
+    if (capture.segmentTimer !== null) {
+      window.clearTimeout(capture.segmentTimer);
+    }
+    if (capture.restartTimer !== null) {
+      window.clearTimeout(capture.restartTimer);
+    }
+    if (capture.realtimeReady && capture.realtimeConnection) {
+      if (capture.realtimeChannel?.readyState === "open") {
+        capture.realtimeChannel.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+      }
+      window.setTimeout(() => {
+        if (audioCapturesRef.current.get(source) !== capture) return;
+        if (capture.realtimeText.trim()) updateRealtimeDraft(capture, capture.realtimeText, true);
+        capture.stream.getTracks().forEach((track) => track.stop());
+        clearAudioCaptureState(source);
+      }, 1_000);
+      return;
+    }
+    capture.realtimeChannel?.close();
+    capture.realtimeConnection?.close();
+    capture.realtimeTrack?.stop();
+    if (capture.recorder?.state === "recording") {
+      capture.recorder.stop();
+    } else {
+      capture.stream.getTracks().forEach((track) => track.stop());
+      clearAudioCaptureState(source);
+    }
+  };
+
+  const startRealtimeCapture = async (
+    capture: ActiveAudioCapture,
+    tokenRequest: Promise<Response | null>,
+  ) => {
+    if (typeof RTCPeerConnection === "undefined") return false;
+    const tokenResponse = await tokenRequest;
+    if (!tokenResponse?.ok) return false;
+    const token = (await tokenResponse.json()) as { enabled?: boolean; token?: string };
+    if (!token.enabled || !token.token || !capture.running) return false;
+
+    const connection = new RTCPeerConnection();
+    capture.realtimeConnection = connection;
+    const realtimeTrack = capture.recordingStream.getAudioTracks()[0].clone();
+    realtimeTrack.enabled = false;
+    capture.realtimeTrack = realtimeTrack;
+    connection.addTrack(realtimeTrack, new MediaStream([realtimeTrack]));
+    const channel = connection.createDataChannel("oai-events");
+    capture.realtimeChannel = channel;
+    let connected = false;
+    const fallbackToClips = () => {
+      if (!connected || !capture.running || capture.realtimeConnection !== connection) return;
+      if (capture.realtimeTimer !== null) window.clearInterval(capture.realtimeTimer);
+      capture.realtimeTimer = null;
+      capture.realtimeConnection = null;
+      capture.realtimeChannel = null;
+      capture.realtimeTrack?.stop();
+      capture.realtimeTrack = null;
+      capture.realtimeReady = false;
+      channel.close();
+      connection.close();
+      if (capture.realtimeText.trim()) updateRealtimeDraft(capture, capture.realtimeText, true);
+      capture.realtimeText = "";
+      setLivePreview((current) => ({ ...current, [capture.source]: "" }));
+      setTranscriptionStatus("Live connection ended. Using clip transcription.");
+      if (!capture.recorder) startRecorderSegment(capture);
+    };
+    connection.onconnectionstatechange = () => {
+      if (connection.connectionState === "failed") fallbackToClips();
+    };
+    channel.onclose = fallbackToClips;
+    channel.onmessage = (message) => {
+      if (!transcriptionMountedRef.current) return;
+      try {
+        const event = JSON.parse(message.data) as {
+          type?: string;
+          delta?: string;
+          transcript?: string;
+          error?: { message?: string };
+        };
+        if (event.type === "conversation.item.input_audio_transcription.delta" && event.delta) {
+          capture.realtimeText += event.delta;
+          updateRealtimeDraft(capture, capture.realtimeText);
+          setLivePreview((current) => ({ ...current, [capture.source]: capture.realtimeText }));
+        } else if (event.type === "conversation.item.input_audio_transcription.completed") {
+          updateRealtimeDraft(
+            capture,
+            capture.realtimeCleared ? capture.realtimeText : event.transcript || capture.realtimeText,
+            true,
+          );
+          capture.realtimeText = "";
+          capture.realtimeCleared = false;
+          setLivePreview((current) => ({ ...current, [capture.source]: "" }));
+        } else if (event.type === "error" && event.error?.message) {
+          fallbackToClips();
+        }
+      } catch {
+        // Ignore non-JSON data-channel events.
+      }
+    };
+    try {
+      const offer = await connection.createOffer();
+      await connection.setLocalDescription(offer);
+      const answer = await fetch("https://api.openai.com/v1/realtime/calls", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token.token}`,
+          "Content-Type": "application/sdp",
+        },
+        body: offer.sdp,
+      });
+      if (!answer.ok) throw new Error("Realtime connection failed.");
+      await connection.setRemoteDescription({ type: "answer", sdp: await answer.text() });
+      await new Promise<void>((resolve, reject) => {
+        if (channel.readyState === "open") return resolve();
+        const timeout = window.setTimeout(() => reject(new Error("Realtime connection timed out.")), 8_000);
+        channel.onopen = () => {
+          window.clearTimeout(timeout);
+          resolve();
+        };
+        channel.onerror = () => {
+          window.clearTimeout(timeout);
+          reject(new Error("Realtime connection failed."));
+        };
+      });
+      connected = true;
+      if (!capture.running) {
+        connection.close();
+        realtimeTrack.stop();
+        capture.realtimeConnection = null;
+        capture.realtimeChannel = null;
+        capture.realtimeTrack = null;
+        return false;
+      }
+      capture.realtimeReady = true;
+      if (capture.recorder?.state === "recording") capture.recorder.stop();
+      realtimeTrack.enabled = true;
+      capture.realtimeTimer = window.setInterval(() => {
+        if (channel.readyState === "open" && capture.running) {
+          channel.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+        }
+      }, 3_000);
+      return true;
+    } catch {
+      connection.close();
+      realtimeTrack.stop();
+      capture.realtimeConnection = null;
+      capture.realtimeChannel = null;
+      capture.realtimeTrack = null;
+      return false;
+    }
+  };
+
+  const startAudioCapture = async (source: AudioCaptureSource) => {
+    if (!navigator.mediaDevices || audioCapturesRef.current.has(source) || startingCaptureSourcesRef.current.has(source)) {
+      return;
+    }
+    startingCaptureSourcesRef.current.add(source);
+    setStartingCaptureSources((current) => [...current, source]);
+    setTranscriptionError("");
+    setTranscriptionStatus(`Waiting for ${source === "microphone" ? "microphone" : "screen audio"} permission...`);
+    const tokenRequest: Promise<Response | null> = typeof RTCPeerConnection === "undefined"
+      ? Promise.resolve(null)
+      : fetch("/api/transcription/realtime", { method: "POST", cache: "no-store" }).catch(() => null);
+    let stream: MediaStream | null = null;
+    try {
+      stream =
+        source === "microphone"
+          ? await navigator.mediaDevices.getUserMedia({
+              audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                ...(selectedMicrophoneId ? { deviceId: { exact: selectedMicrophoneId } } : {}),
+              },
+            })
+          : await navigator.mediaDevices.getDisplayMedia({
+              video: true,
+              audio: true,
+            });
+      if (stream.getAudioTracks().length === 0) {
+        stream.getTracks().forEach((track) => track.stop());
+        throw new Error(
+          "No speaker audio was shared. Select a tab or screen and enable audio sharing.",
+        );
+      }
+
+      const capture: ActiveAudioCapture = {
+        source,
+        stream,
+        recordingStream: new MediaStream(stream.getAudioTracks()),
+        recorder: null,
+        segmentTimer: null,
+        restartTimer: null,
+        monitorContext: null,
+        monitorTimer: null,
+        realtimeConnection: null,
+        realtimeChannel: null,
+        realtimeTimer: null,
+        realtimeTrack: null,
+        realtimeReady: false,
+        realtimeText: "",
+        realtimeDraftLine: "",
+        realtimeCleared: false,
+        running: true,
+      };
+      audioCapturesRef.current.set(source, capture);
+      if (source === "microphone") {
+        microphonePeakRef.current = 0;
+        void navigator.mediaDevices.enumerateDevices()
+          .then((devices) => {
+            if (capture.running) {
+              setMicrophoneDevices(devices.filter((device) => device.kind === "audioinput"));
+            }
+          })
+          .catch(() => undefined);
+        if (typeof AudioContext !== "undefined") {
+          try {
+            const context = new AudioContext();
+            capture.monitorContext = context;
+            const analyser = context.createAnalyser();
+            analyser.fftSize = 1024;
+            context.createMediaStreamSource(stream).connect(analyser);
+            void context.resume().catch(() => undefined);
+            const samples = new Uint8Array(analyser.fftSize);
+            capture.monitorTimer = window.setInterval(() => {
+              analyser.getByteTimeDomainData(samples);
+              const level = Math.sqrt(samples.reduce((sum, value) => {
+                const sample = (value - 128) / 128;
+                return sum + sample * sample;
+              }, 0) / samples.length);
+              microphonePeakRef.current = Math.max(microphonePeakRef.current, level);
+              setMicrophoneLevel(Math.min(100, Math.round(level * 300)));
+            }, 250);
+          } catch {
+            void capture.monitorContext?.close();
+            capture.monitorContext = null;
+          }
+        }
+      }
+      stream.getTracks().forEach((track) => {
+        track.addEventListener("ended", () => {
+          if (capture.running) {
+            setTranscriptionError(`${source === "microphone" ? "Microphone" : "Speaker audio"} stopped unexpectedly. Start it again.`);
+            stopAudioCapture(source);
+          }
+        }, { once: true });
+      });
+      startRecorderSegment(capture);
+      setActiveCaptureSources((current) => current.includes(source) ? current : [...current, source]);
+      setTranscriptionStatus("Capturing audio. Connecting live transcription...");
+      void startRealtimeCapture(capture, tokenRequest)
+        .then((realtime) => {
+          if (!capture.running || !transcriptionMountedRef.current) return;
+          setTranscriptionStatus(realtime ? "Live transcription connected." : "Using clip transcription.");
+        })
+        .catch(() => {
+          if (capture.running && transcriptionMountedRef.current) {
+            setTranscriptionStatus("Using clip transcription.");
+          }
+        });
+    } catch (error) {
+      clearAudioCaptureState(source);
+      stream?.getTracks().forEach((track) => track.stop());
+      setTranscriptionStatus("");
+      setTranscriptionError(
+        error instanceof DOMException && error.name === "NotAllowedError"
+          ? `${source === "microphone" ? "Microphone" : "Speaker audio"} permission was denied.`
+          : error instanceof Error
+            ? error.message
+            : "Unable to start audio capture.",
+      );
+    } finally {
+      startingCaptureSourcesRef.current.delete(source);
+      setStartingCaptureSources((current) => current.filter((item) => item !== source));
+    }
+  };
 
   const addFiles = (files: FileList | File[]) => {
     const nextFiles = Array.from(files);
@@ -906,7 +1500,13 @@ function ChatColumn({
   };
 
   const handleSend = async () => {
-    if (pending || preparingAttachments || (!draft.trim() && attachments.length === 0)) {
+    if (
+      pending ||
+      preparingAttachments ||
+      activeCaptureSources.length > 0 ||
+      transcriptionRequestCount > 0 ||
+      (!draft.trim() && attachments.length === 0)
+    ) {
       return;
     }
 
@@ -1020,12 +1620,12 @@ function ChatColumn({
             : undefined
         }
       >
-        {discussionStyle && displayMessages.length === 0 ? (
+        {discussionStyle && messages.length === 0 ? (
           <div className="rounded-[20px] border border-dashed border-[#d8e4d8] bg-white/88 px-4 py-5 text-sm text-[#6d7f70]">
             No discussion yet.
           </div>
         ) : null}
-        {displayMessages.map((message) => {
+        {messages.map((message) => {
           const isOwnMessage =
             message.channel === "team" &&
             message.userId &&
@@ -1290,25 +1890,156 @@ function ChatColumn({
               </svg>
             </button>
           ) : null}
-          <textarea
-            value={draft}
-            onChange={(event) => onDraftChange(event.target.value)}
-            onPaste={handlePaste}
-            onKeyDown={handleMessageKeyDown}
-            rows={discussionStyle ? 1 : 3}
-            className={
-              discussionStyle
-                ? "max-h-40 min-h-[22px] flex-1 resize-none overflow-y-auto bg-transparent px-1 py-[3px] text-sm leading-5 outline-none placeholder:text-[#9aa89b]"
-                : "min-h-[92px] flex-1 rounded-2xl border border-[var(--border)] bg-[color:var(--background)] px-3 py-3 text-sm outline-none"
-            }
-            placeholder={discussionStyle ? "Write a message..." : "Type a message..."}
-          />
+          <div className={discussionStyle ? "contents" : "min-w-0 flex-1"}>
+            {enableTranscription ? (
+              <div className="mb-2">
+                <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2 text-sm font-medium">
+                    <span
+                      className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                        activeCaptureSources.length > 0
+                          ? "animate-pulse bg-red-500"
+                          : "bg-[color:var(--border)]"
+                      }`}
+                    />
+                    <span>
+                      {activeCaptureSources.length > 0
+                        ? "Capturing live audio..."
+                        : transcriptionRequestCount > 0
+                          ? "Transcribing..."
+                          : "Live transcript"}
+                    </span>
+                  </div>
+                  {transcriptionSupported === true ? (
+                    <div className="flex items-center gap-2">
+                      {(["microphone", "speaker"] as const).map((source) => {
+                        const active = activeCaptureSources.includes(source);
+                        return (
+                          <button
+                            key={source}
+                            type="button"
+                            onClick={() =>
+                              active
+                                ? stopAudioCapture(source)
+                                : void startAudioCapture(source)
+                            }
+                            disabled={pending || startingCaptureSources.includes(source)}
+                            aria-pressed={active}
+                            className={`h-8 rounded-lg border px-3 text-xs font-semibold transition disabled:opacity-60 ${
+                              active
+                                ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                                : "border-[var(--border)] bg-white text-[color:var(--foreground)] hover:bg-[color:var(--background)]"
+                            }`}
+                          >
+                            {startingCaptureSources.includes(source) ? "Starting" : active ? "Stop" : "Start"}{" "}
+                            {source === "microphone" ? "mic" : "speaker"}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : transcriptionSupported === false ? (
+                    <span className="text-xs text-[color:var(--muted)]">
+                      Not supported by this browser
+                    </span>
+                  ) : null}
+                </div>
+                {transcriptionError ? (
+                  <div className="mt-1 text-xs text-red-600" role="alert">
+                    {transcriptionError}
+                  </div>
+                ) : null}
+                {transcriptionStatus && !transcriptionError ? (
+                  <div className="mt-1 text-xs text-[color:var(--muted)]" role="status">
+                    {transcriptionStatus}
+                  </div>
+                ) : null}
+                {(livePreview.microphone || livePreview.speaker) ? (
+                  <div className="mt-1 text-sm text-[color:var(--foreground)]" aria-live="polite">
+                    {livePreview.microphone ? <div>Mic: {livePreview.microphone}</div> : null}
+                    {livePreview.speaker ? <div>Speaker: {livePreview.speaker}</div> : null}
+                  </div>
+                ) : null}
+                {transcriptionSupported !== false ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+                    <label className="flex min-w-0 items-center gap-2 text-xs text-[color:var(--muted)]">
+                      <span>Microphone</span>
+                      <select
+                        value={selectedMicrophoneId}
+                        onChange={(event) => setSelectedMicrophoneId(event.target.value)}
+                        disabled={activeCaptureSources.includes("microphone") || startingCaptureSources.includes("microphone")}
+                        className="h-8 min-w-0 max-w-64 rounded-lg border border-[var(--border)] bg-white px-2 text-xs text-[color:var(--foreground)]"
+                      >
+                        <option value="">System default</option>
+                        {microphoneDevices.filter((device) => device.deviceId && device.deviceId !== "default").map((device, index) => (
+                          <option key={device.deviceId} value={device.deviceId}>{device.label || `Microphone ${index + 1}`}</option>
+                        ))}
+                      </select>
+                    </label>
+                    {activeCaptureSources.includes("microphone") ? (
+                      <div className="flex items-center gap-2 text-xs text-[color:var(--muted)]">
+                        <span>Mic input</span>
+                        <div className="h-2 w-28 overflow-hidden rounded-full bg-[#e4e9df]" role="meter" aria-label="Microphone input level" aria-valuemin={0} aria-valuemax={100} aria-valuenow={microphoneLevel}>
+                          <div className="h-full rounded-full bg-[#659b6b]" style={{ width: `${microphoneLevel}%` }} />
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            <textarea
+              ref={messageInputRef}
+              value={draft}
+              onChange={(event) => {
+                draftRef.current = event.target.value;
+                onDraftChange(event.target.value);
+              }}
+              onPaste={handlePaste}
+              onKeyDown={handleMessageKeyDown}
+              rows={discussionStyle ? 1 : 3}
+              className={
+                discussionStyle
+                  ? "max-h-40 min-h-[22px] flex-1 resize-none overflow-y-auto bg-transparent px-1 py-[3px] text-sm leading-5 outline-none placeholder:text-[#9aa89b]"
+                  : "min-h-[92px] w-full resize-y rounded-2xl border border-[var(--border)] bg-[color:var(--background)] px-3 py-3 text-sm outline-none"
+              }
+              placeholder={
+                activeCaptureSources.length > 0
+                  ? "Live captions will appear here..."
+                  : discussionStyle
+                    ? "Write a message..."
+                    : "Type a message..."
+              }
+            />
+          </div>
+          {enableTranscription ? (
+            <button
+              type="button"
+              onClick={() => {
+                draftRef.current = "";
+                if (messageInputRef.current) messageInputRef.current.value = "";
+                onDraftChange("");
+                for (const capture of audioCapturesRef.current.values()) {
+                  capture.realtimeText = "";
+                  capture.realtimeDraftLine = "";
+                  capture.realtimeCleared = true;
+                }
+                setLivePreview({ microphone: "", speaker: "" });
+              }}
+              disabled={!draft}
+              className="h-8 shrink-0 rounded-lg border border-[var(--border)] bg-white px-3 text-xs font-semibold text-[color:var(--foreground)] hover:bg-[color:var(--background)] disabled:opacity-50"
+              aria-label="Clear message text"
+            >
+              Clear
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => void handleSend()}
             disabled={
               pending ||
               preparingAttachments ||
+              activeCaptureSources.length > 0 ||
+              transcriptionRequestCount > 0 ||
               (!draft.trim() && attachments.length === 0)
             }
             className={`flex h-8 items-center justify-center bg-[color:var(--accent)] text-white disabled:opacity-60 ${
@@ -1431,6 +2162,33 @@ function ChatColumn({
   );
 }
 
+function getSupportedAudioMimeType() {
+  if (typeof MediaRecorder === "undefined") {
+    return "";
+  }
+  return ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((type) =>
+    MediaRecorder.isTypeSupported(type),
+  ) ?? "";
+}
+
+function SettingsIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className="h-5 w-5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.09A1.7 1.7 0 0 0 8.5 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3v-4h.09A1.7 1.7 0 0 0 4.6 8.5a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.09A1.7 1.7 0 0 0 15.5 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.16.37.37.7.6 1 .29.35.68.58 1.1.6H21v4h-.09A1.7 1.7 0 0 0 19.4 15Z" />
+    </svg>
+  );
+}
+
 function ContextField({
   label,
   value,
@@ -1453,8 +2211,13 @@ function ContextField({
   );
 }
 
-function buildAiDisplayMessages(messages: RoomUiMessage[]) {
-  return [...messages].sort(
+function mergeServerRoomMessages(
+  current: InterviewRoomMessage[],
+  incoming: InterviewRoomMessage[],
+) {
+  const byId = new Map(current.map((message) => [message.id, message]));
+  incoming.forEach((message) => byId.set(message.id, message));
+  return [...byId.values()].sort(
     (left, right) =>
       new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
   );
@@ -1512,6 +2275,16 @@ function mergeRoomMessages(
       );
 
       if (matchingServerIndex >= 0) {
+        let hasAnswer = false;
+        for (const message of merged.slice(matchingServerIndex + 1)) {
+          if (message.channel !== "ai") continue;
+          if (message.role === "user") break;
+          if (message.role === "assistant" && !message.isLoading) {
+            hasAnswer = true;
+            break;
+          }
+        }
+        if (hasAnswer) return;
         merged.splice(matchingServerIndex + 1, 0, pendingMessage);
         return;
       }

@@ -12,9 +12,9 @@ import {
   updateInterviewRoomSharedNote,
   upsertInterviewRoomContext,
 } from "@/lib/interview-room";
-import { getSelectedApiKey } from "@/lib/ai-settings";
+import { createAiChatCompletion } from "@/lib/ai-chat";
 
-async function sendDeepSeekMessage(input: {
+async function sendAiMessage(input: {
   prompt: string;
   roomLabel: string;
   userName: string;
@@ -26,30 +26,16 @@ async function sendDeepSeekMessage(input: {
     aiPrompt: string;
   };
 }) {
-  const selectedKey = await getSelectedApiKey();
-
-  if (!selectedKey?.apiKey) {
-    throw new Error("No API key selected.");
-  }
-
-  const response = await fetch("https://api.deepseek.com/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${selectedKey.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      temperature: 0.2,
-      max_tokens: 800,
-      messages: [
-        {
-          role: "system",
-          content: input.context.aiPrompt,
-        },
-        {
-          role: "user",
-          content: `Now perform the task as instructed above.
+  return createAiChatCompletion({
+    maxTokens: 800,
+    messages: [
+      {
+        role: "system",
+        content: input.context.aiPrompt,
+      },
+      {
+        role: "user",
+        content: `Now perform the task as instructed above.
 
 Here is the content you need to work with:
 
@@ -74,24 +60,9 @@ ${input.context.reference || "(empty)"}
 ${input.prompt}
 
 <<<END CONTENT>>>`,
-        },
-      ],
-    }),
+      },
+    ],
   });
-
-  if (!response.ok) {
-    throw new Error("DeepSeek request failed.");
-  }
-
-  const payload = (await response.json()) as {
-    choices?: Array<{
-      message?: {
-        content?: string;
-      };
-    }>;
-  };
-
-  return payload.choices?.[0]?.message?.content?.trim() || "No response.";
 }
 
 export async function GET(request: Request) {
@@ -340,7 +311,7 @@ export async function POST(request: Request) {
 
     if (channel === "ai") {
       const currentState = await getInterviewRoomState(roomKey);
-      const aiResponse = await sendDeepSeekMessage({
+      const aiResponse = await sendAiMessage({
         prompt: content,
         roomLabel,
         userName: user.name,

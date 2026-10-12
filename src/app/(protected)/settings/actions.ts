@@ -1,7 +1,7 @@
 "use server";
 
 import { getSessionUser } from "@/lib/auth";
-import { addApiKey, removeApiKey, selectApiKey } from "@/lib/ai-settings";
+import { addApiKey, removeApiKey, selectApiKey, updateApiKeyModel, updateApiKeyProvider } from "@/lib/ai-settings";
 import { createAuditLog } from "@/lib/audit-log";
 
 type ActionState = {
@@ -64,6 +64,62 @@ export async function selectApiKeyAction(_: ActionState, formData: FormData) {
   });
 
   return { message: "API key selected." };
+}
+
+export async function updateApiKeyProviderAction(_: ActionState, formData: FormData) {
+  const user = await getSessionUser();
+  if (!user || user.role !== "admin") {
+    return { message: "Only administrators can manage API keys." };
+  }
+
+  const id = String(formData.get("id") ?? "").trim();
+  const provider = String(formData.get("provider") ?? "").trim();
+  if (!id) {
+    return { message: "API key is required." };
+  }
+
+  try {
+    await updateApiKeyProvider(id, provider);
+    await createAuditLog({
+      actorUserId: user.id,
+      actorEmail: user.email,
+      action: "settings.api_key_provider_updated",
+      targetType: "api_key",
+      targetId: id,
+      targetLabel: id,
+      metadata: { provider },
+    });
+    return { message: "Provider updated." };
+  } catch (error) {
+    return { message: error instanceof Error ? error.message : "Unable to update provider." };
+  }
+}
+
+export async function updateApiKeyModelAction(_: ActionState, formData: FormData) {
+  const user = await getSessionUser();
+  if (!user || user.role !== "admin") {
+    return { message: "Only administrators can manage API keys." };
+  }
+  const id = String(formData.get("id") ?? "").trim();
+  const model = String(formData.get("model") ?? "").trim();
+  if (!id) {
+    return { message: "API key is required." };
+  }
+  try {
+    await updateApiKeyModel(id, model);
+    await createAuditLog({
+      actorUserId: user.id,
+      actorEmail: user.email,
+      action: "settings.api_key_model_updated",
+      targetType: "api_key",
+      targetId: id,
+      targetLabel: id,
+      metadata: { model },
+    });
+    return { message: "Model updated." };
+  } catch (error) {
+    return { message: error instanceof Error ? error.message : "Unable to update model." };
+  }
 }
 
 export async function removeApiKeyAction(_: ActionState, formData: FormData) {

@@ -1,12 +1,14 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import {
   addApiKeyAction,
   removeApiKeyAction,
   selectApiKeyAction,
+  updateApiKeyModelAction,
+  updateApiKeyProviderAction,
 } from "@/app/(protected)/settings/actions";
 import type { ApiKeySetting } from "@/lib/types";
 
@@ -30,7 +32,11 @@ export function ApiKeySettings({
     removeApiKeyAction,
     initialState,
   );
-  const message = addState.message || selectState.message || removeState.message;
+  const [providerState, providerAction, providerPending] = useActionState(
+    updateApiKeyProviderAction,
+    initialState,
+  );
+  const message = addState.message || selectState.message || removeState.message || providerState.message;
 
   useEffect(() => {
     if (!message) {
@@ -52,11 +58,14 @@ export function ApiKeySettings({
       <form action={addAction} className="grid gap-4 rounded-[22px] border border-[var(--border)] bg-[color:var(--background)] p-4 md:grid-cols-[160px_minmax(0,1fr)_minmax(0,1.2fr)_auto] md:items-end">
         <label className="grid gap-2">
           <span className="text-sm font-medium">Provider</span>
-          <input
+          <select
             name="provider"
             defaultValue="deepseek"
             className="h-11 rounded-xl border border-[var(--border)] bg-white px-3 text-sm outline-none"
-          />
+          >
+            <option value="deepseek">DeepSeek</option>
+            <option value="openai">OpenAI</option>
+          </select>
         </label>
         <label className="grid gap-2">
           <span className="text-sm font-medium">Name</span>
@@ -109,7 +118,24 @@ export function ApiKeySettings({
                 {apiKey.provider} · {apiKey.apiKeyMasked}
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <ModelPicker key={`${apiKey.id}-${apiKey.provider}-${apiKey.model}`} apiKey={apiKey} />
+              <form action={providerAction} className="flex items-center gap-2">
+                <input type="hidden" name="id" value={apiKey.id} />
+                <select
+                  key={`${apiKey.id}-${apiKey.provider}`}
+                  name="provider"
+                  defaultValue={apiKey.provider}
+                  aria-label={`Provider for ${apiKey.name}`}
+                  className="h-10 rounded-xl border border-[var(--border)] bg-white px-2 text-sm"
+                >
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="openai">OpenAI</option>
+                </select>
+                <button type="submit" disabled={providerPending} className="h-10 rounded-xl border border-[var(--border)] bg-white px-3 text-sm font-semibold disabled:opacity-60">
+                  Save provider
+                </button>
+              </form>
               {!apiKey.isSelected ? (
                 <form action={selectAction}>
                   <input type="hidden" name="id" value={apiKey.id} />
@@ -144,5 +170,74 @@ export function ApiKeySettings({
         ))}
       </div>
     </div>
+  );
+}
+
+function ModelPicker({ apiKey }: { apiKey: ApiKeySetting }) {
+  const router = useRouter();
+  const [state, action, pending] = useActionState(updateApiKeyModelAction, initialState);
+  const [models, setModels] = useState<string[]>([]);
+  const [selected, setSelected] = useState(apiKey.model ?? "");
+  const [custom, setCustom] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
+
+  useEffect(() => {
+    if (state.message === "Model updated.") router.refresh();
+  }, [state.message, router]);
+
+  async function loadModels() {
+    if (models.length || loading) return;
+    setLoading(true);
+    setLoadError("");
+    try {
+      const response = await fetch(`/api/settings/api-keys/${encodeURIComponent(apiKey.id)}/models`, { cache: "no-store" });
+      const payload = (await response.json()) as { models?: string[]; message?: string };
+      if (!response.ok) throw new Error(payload.message || "Unable to load models.");
+      setModels(payload.models ?? []);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Unable to load models.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const choices = [...new Set([apiKey.model, ...models].filter(Boolean))];
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="id" value={apiKey.id} />
+      <input type="hidden" name="model" value={selected === "custom" ? custom : selected} />
+      <label className="sr-only" htmlFor={`model-${apiKey.id}`}>Model for {apiKey.name}</label>
+      <select
+        id={`model-${apiKey.id}`}
+        value={selected}
+        onFocus={loadModels}
+        onChange={(event) => setSelected(event.target.value)}
+        className="h-10 max-w-56 rounded-xl border border-[var(--border)] bg-white px-2 text-sm"
+      >
+        <option value="">Default model</option>
+        {choices.map((model) => <option key={model} value={model}>{model}</option>)}
+        <option value="custom">Custom model ID...</option>
+      </select>
+      <button type="button" onClick={loadModels} disabled={loading} className="h-10 rounded-xl border border-[var(--border)] bg-white px-3 text-sm disabled:opacity-60">
+        {loading ? "Loading..." : "Load models"}
+      </button>
+      {selected === "custom" ? (
+        <input
+          value={custom}
+          onChange={(event) => setCustom(event.target.value)}
+          placeholder="Model ID"
+          aria-label={`Custom model ID for ${apiKey.name}`}
+          required
+          className="h-10 w-40 rounded-xl border border-[var(--border)] bg-white px-2 text-sm"
+        />
+      ) : null}
+      <button type="submit" disabled={pending || loading} className="h-10 rounded-xl border border-[var(--border)] bg-white px-3 text-sm font-semibold disabled:opacity-60">
+        {pending ? "Saving..." : "Save model"}
+      </button>
+      {loadError || (state.message && state.message !== "Model updated.") ? (
+        <span role="alert" className="text-xs text-rose-700">{loadError || state.message}</span>
+      ) : null}
+    </form>
   );
 }

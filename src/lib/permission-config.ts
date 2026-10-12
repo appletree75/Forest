@@ -38,7 +38,7 @@ export const defaultPermissionMatrix: PermissionMatrix = {
     "view_chat",
     "view_profile",
   ],
-  supportor: ["view_dashboard", "view_chat", "view_profile"],
+  supportor: ["view_dashboard", "view_interview", "view_chat", "view_profile"],
 };
 
 export const managedPermissionKeys = Object.keys(

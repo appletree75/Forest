@@ -1,0 +1,1 @@
+ALTER TABLE "ApiKeySetting" ADD COLUMN "model" TEXT NOT NULL DEFAULT '';

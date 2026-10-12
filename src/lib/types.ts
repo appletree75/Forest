@@ -187,6 +187,7 @@ export type FinanceTransaction = {
 export type ApiKeySetting = {
   id: string;
   provider: string;
+  model: string;
   name: string;
   apiKeyMasked: string;
   isSelected: boolean;
@@ -215,6 +216,19 @@ export type InterviewRoomMessage = {
   content: string;
   createdAt: string;
   attachments: InterviewRoomAttachment[];
+};
+
+export type TranscriptionProvider = "openai" | "deepgram";
+
+export type TranscriptionProviderSetting = {
+  id: string;
+  provider: TranscriptionProvider;
+  name: string;
+  apiKeyMasked: string;
+  model: string;
+  isSelected: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type InterviewRoomAttachment = {

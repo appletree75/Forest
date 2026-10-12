@@ -114,11 +114,25 @@ model ApiKeySetting {
   provider   String
   name       String
   apiKey     String
+  model      String   @default("")
   isSelected Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
   @@index([provider, isSelected])
+}
+
+model TranscriptionProviderSetting {
+  id         String   @id
+  provider   String
+  name       String
+  apiKey     String
+  model      String   @default("")
+  isSelected Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([isSelected])
 }
 
 model JobApplicationRow {

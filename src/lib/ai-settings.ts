@@ -24,6 +24,7 @@ function maskApiKey(value: string) {
 function mapApiKey(row: {
   id: string;
   provider: string;
+  model: string;
   name: string;
   apiKey: string;
   isSelected: boolean;
@@ -33,6 +34,7 @@ function mapApiKey(row: {
   return {
     id: row.id,
     provider: row.provider,
+    model: row.model,
     name: row.name,
     apiKeyMasked: maskApiKey(row.apiKey),
     isSelected: row.isSelected,
@@ -133,6 +135,7 @@ const getCachedApiKeys = unstable_cache(
             {
               id: "fallback-deepseek",
               provider: DEFAULT_PROVIDER,
+              model: "",
               name: DEFAULT_NAME,
               apiKeyMasked: maskApiKey(DEFAULT_DEEPSEEK_KEY),
               isSelected: true,
@@ -155,12 +158,17 @@ export async function addApiKey(input: {
   provider: string;
   name: string;
   apiKey: string;
+  model?: string;
 }) {
   await ensureDatabaseConnected();
 
-  const provider = input.provider.trim().toLowerCase() || DEFAULT_PROVIDER;
+  const provider = input.provider.trim().toLowerCase();
+  if (provider !== "openai" && provider !== "deepseek") {
+    throw new Error("Choose OpenAI or DeepSeek as the provider.");
+  }
   const name = input.name.trim() || input.provider.trim() || "API key";
   const apiKey = input.apiKey.trim();
+  const model = validateModelId(input.model ?? "");
 
   if (!apiKey) {
     throw new Error("API key is required.");
@@ -175,12 +183,74 @@ export async function addApiKey(input: {
       provider,
       name,
       apiKey,
+      model,
       isSelected: selectedExists === 0,
     },
   });
 
   revalidateTag("api-keys");
   return mapApiKey(created);
+}
+
+export async function updateApiKeyProvider(id: string, provider: string) {
+  await ensureDatabaseConnected();
+  const normalized = provider.trim().toLowerCase();
+  if (normalized !== "openai" && normalized !== "deepseek") {
+    throw new Error("Choose OpenAI or DeepSeek as the provider.");
+  }
+  await prisma.apiKeySetting.update({
+    where: { id },
+    data: { provider: normalized, model: "" },
+  });
+  revalidateTag("api-keys");
+}
+
+function validateModelId(model: string) {
+  const normalized = model.trim();
+  if (normalized.length > 200 || (normalized && !/^[a-zA-Z0-9][a-zA-Z0-9._:/+-]*$/.test(normalized))) {
+    throw new Error("Enter a valid model ID (up to 200 characters).");
+  }
+  return normalized;
+}
+
+export async function updateApiKeyModel(id: string, model: string) {
+  await ensureDatabaseConnected();
+  const normalized = validateModelId(model);
+  await prisma.apiKeySetting.update({
+    where: { id },
+    data: { model: normalized },
+  });
+  revalidateTag("api-keys");
+}
+
+export async function getAvailableModels(id: string) {
+  await ensureDatabaseConnected();
+  const setting = await prisma.apiKeySetting.findUnique({ where: { id } });
+  if (!setting) {
+    throw new Error("API key not found.");
+  }
+  const provider = setting.provider.toLowerCase();
+  const url = provider === "openai"
+    ? "https://api.openai.com/v1/models"
+    : provider === "deepseek"
+      ? "https://api.deepseek.com/models"
+      : null;
+  if (!url) {
+    throw new Error("This provider does not support model listing.");
+  }
+
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${setting.apiKey}` },
+    cache: "no-store",
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok) {
+    throw new Error(response.status === 401 || response.status === 403
+      ? "The provider rejected this API key. Check its provider and key."
+      : `Unable to load models (HTTP ${response.status}).`);
+  }
+  const payload = (await response.json()) as { data?: Array<{ id?: string }> };
+  return [...new Set((payload.data ?? []).map((model) => model.id).filter((model): model is string => Boolean(model)))].sort();
 }
 
 export async function selectApiKey(id: string) {
@@ -256,6 +326,7 @@ export async function getSelectedApiKey() {
       ? {
           id: "fallback-deepseek",
           provider: DEFAULT_PROVIDER,
+          model: "",
           name: DEFAULT_NAME,
           apiKey: DEFAULT_DEEPSEEK_KEY,
           isSelected: true,
