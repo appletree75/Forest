@@ -276,8 +276,9 @@ export function InterviewRoom({
   const postMessage = async (
     channel: "team" | "ai",
     attachments: InterviewRoomUploadAttachment[] = [],
+    contentOverride?: string,
   ) => {
-    const content = channel === "team" ? teamDraft.trim() : aiDraft.trim();
+    const content = (contentOverride ?? (channel === "team" ? teamDraft : aiDraft)).trim();
 
     if (sendingRef.current[channel] || (!content && attachments.length === 0)) {
       return false;
@@ -392,9 +393,9 @@ export function InterviewRoom({
           current.filter((message) => message.pendingKey !== pendingKey),
         );
         if (channel === "team") {
-          setTeamDraft(content);
+          setTeamDraft((current) => [content, current].filter(Boolean).join("\n"));
         } else {
-          setAiDraft(content);
+          setAiDraft((current) => [content, current].filter(Boolean).join("\n"));
         }
         return false;
       } finally {
@@ -672,7 +673,7 @@ export function InterviewRoom({
           enableTranscription
           draft={aiDraft}
           onDraftChange={setAiDraft}
-          onSend={() => postMessage("ai")}
+          onSend={(_attachments, content) => postMessage("ai", [], content)}
           pending={aiSending}
           scrollRef={aiScrollRef}
           onScroll={() => {
@@ -902,7 +903,7 @@ function ChatColumn({
   enableTranscription?: boolean;
   draft: string;
   onDraftChange: (value: string) => void;
-  onSend: (attachments?: InterviewRoomUploadAttachment[]) => Promise<boolean>;
+  onSend: (attachments?: InterviewRoomUploadAttachment[], content?: string) => Promise<boolean>;
   pending: boolean;
   scrollRef: React.RefObject<HTMLDivElement | null>;
   onScroll?: () => void;
@@ -1549,12 +1550,11 @@ function ChatColumn({
   };
 
   const handleSend = async () => {
+    const content = draftRef.current.trim();
     if (
       pending ||
       preparingAttachments ||
-      activeCaptureSources.length > 0 ||
-      transcriptionRequestCount > 0 ||
-      (!draft.trim() && attachments.length === 0)
+      (!content && attachments.length === 0)
     ) {
       return;
     }
@@ -1569,7 +1569,18 @@ function ChatColumn({
           dataUrl: await interviewFileToDataUrl(attachment.file),
         })),
       );
-      const sent = await onSend(payload);
+      const send = onSend(payload, content);
+      if (enableTranscription && content) {
+        for (const capture of audioCapturesRef.current.values()) {
+          capture.realtimeText = "";
+          capture.realtimeDraftLine = "";
+          capture.realtimeDraftPosition = null;
+          capture.realtimeCleared = true;
+        }
+        setLivePreview({ microphone: "", speaker: "" });
+        updateCaptionInput("");
+      }
+      const sent = await send;
 
       if (sent) {
         setAttachments((current) => {
@@ -2089,8 +2100,6 @@ function ChatColumn({
             disabled={
               pending ||
               preparingAttachments ||
-              activeCaptureSources.length > 0 ||
-              transcriptionRequestCount > 0 ||
               (!draft.trim() && attachments.length === 0)
             }
             className={`flex h-8 items-center justify-center bg-[color:var(--accent)] text-white disabled:opacity-60 ${
