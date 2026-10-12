@@ -457,6 +457,7 @@ const WINDOWS_TZ_TO_IANA: Record<string, string> = {
   "Eastern Standard Time": "America/New_York",
   "Central Standard Time": "America/Chicago",
   "Mountain Standard Time": "America/Denver",
+  "US Mountain Standard Time": "America/Phoenix",
   "Pacific Standard Time": "America/Los_Angeles",
   "British Columbia Standard Time": "America/Vancouver",
   "Alaskan Standard Time": "America/Anchorage",
