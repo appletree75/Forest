@@ -37,9 +37,17 @@ export async function getAppSettingsRow(): Promise<AppSettingsRow> {
   await ensureAppSettingsRow();
 
   const availableColumns = await getAppSettingsColumns();
-  const rows = await readAppSettingsRow(availableColumns);
+  let row = (await readAppSettingsRow(availableColumns))[0];
 
-  const row = rows[0];
+  if (
+    row &&
+    (!row.permissionMatrix ||
+      typeof row.permissionMatrix !== "object" ||
+      !("supportorInterviewDefaultApplied" in row.permissionMatrix))
+  ) {
+    await applySupportorInterviewDefault();
+    row = (await readAppSettingsRow(availableColumns))[0];
+  }
 
   if (!row) {
       return {
@@ -64,7 +72,7 @@ export async function updateAppSettingsPermissionMatrix(
       INSERT INTO "AppSettings" ("id", "permissionMatrix", "createdAt", "updatedAt")
       VALUES (
         ${getSettingsId()},
-        ${JSON.stringify(permissionMatrix)}::jsonb,
+        ${JSON.stringify({ ...permissionMatrix, supportorInterviewDefaultApplied: true })}::jsonb,
         NOW(),
         NOW()
       )
@@ -72,6 +80,38 @@ export async function updateAppSettingsPermissionMatrix(
       SET
         "permissionMatrix" = EXCLUDED."permissionMatrix",
         "updatedAt" = NOW()
+    `,
+  );
+}
+
+async function applySupportorInterviewDefault() {
+  // Upgrade legacy rows once; later admin changes carry the marker and are left alone.
+  await prisma.$executeRaw(
+    Prisma.sql`
+      UPDATE "AppSettings"
+      SET
+        "permissionMatrix" = jsonb_set(
+          jsonb_set(
+            "permissionMatrix",
+            '{supportor}',
+            CASE
+              WHEN jsonb_typeof("permissionMatrix"->'supportor') = 'array' THEN
+                CASE
+                  WHEN "permissionMatrix"->'supportor' @> '["view_interview"]'::jsonb
+                    THEN "permissionMatrix"->'supportor'
+                  ELSE "permissionMatrix"->'supportor' || '["view_interview"]'::jsonb
+                END
+              ELSE ${JSON.stringify(defaultPermissionMatrix.supportor)}::jsonb
+            END,
+            true
+          ),
+          '{supportorInterviewDefaultApplied}',
+          'true'::jsonb,
+          true
+        ),
+        "updatedAt" = NOW()
+      WHERE "id" = ${getSettingsId()}
+        AND NOT ("permissionMatrix" ? 'supportorInterviewDefaultApplied')
     `,
   );
 }
