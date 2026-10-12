@@ -5,6 +5,7 @@ services:
     plan: starter
     autoDeploy: true
     buildCommand: npm ci && npm run prisma:generate && npm run build
+    preDeployCommand: npm run prisma:migrate:deploy
     startCommand: node .next/standalone/server.js
     healthCheckPath: /api/health
     envVars:

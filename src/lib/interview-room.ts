@@ -247,6 +247,7 @@ export function emptyInterviewRoomContext(roomKey: string): InterviewRoomContext
 }
 
 export async function createInterviewRoomMessage(input: {
+  id?: string;
   roomKey: string;
   eventType: "local" | "imported";
   eventId: string;
@@ -280,6 +281,7 @@ export async function createInterviewRoomMessage(input: {
   const created = await prisma.$transaction(async (tx) => {
     const message = await tx.interviewRoomMessage.create({
       data: {
+        ...(input.id ? { id: input.id } : {}),
         roomKey: input.roomKey,
         eventType: input.eventType,
         eventId: input.eventId,

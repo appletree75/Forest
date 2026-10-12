@@ -251,6 +251,7 @@ export async function POST(request: Request) {
       roomKey?: string;
       channel?: "team" | "ai";
       content?: string;
+      clientMessageId?: string;
       roomLabel?: string;
       attachments?: Array<{
         name?: string;
@@ -262,6 +263,10 @@ export async function POST(request: Request) {
     const roomKey = body.roomKey?.trim() || "";
     const channel = body.channel === "ai" ? "ai" : "team";
     const content = body.content?.trim() || "";
+    const clientMessageId = typeof body.clientMessageId === "string" &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.clientMessageId)
+      ? body.clientMessageId
+      : undefined;
     const roomLabel = body.roomLabel?.trim() || "Interview room";
     const attachments = Array.isArray(body.attachments)
       ? body.attachments.slice(0, 8).map((attachment) => ({
@@ -296,6 +301,7 @@ export async function POST(request: Request) {
     });
 
     const postedMessage = await createInterviewRoomMessage({
+      id: clientMessageId,
       roomKey,
       eventType: parsedRoom.eventType,
       eventId: parsedRoom.eventId,

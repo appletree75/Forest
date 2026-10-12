@@ -89,6 +89,7 @@ export function InterviewRoom({
   const [aiDraft, setAiDraft] = useState("");
   const [teamSending, setTeamSending] = useState(false);
   const [aiSending, setAiSending] = useState(false);
+  const sendingRef = useRef({ team: false, ai: false });
   const [messageError, setMessageError] = useState("");
   const [roomDegraded, setRoomDegraded] = useState(false);
   const [sharedNoteDraft, setSharedNoteDraft] = useState(initialContext.sharedNote);
@@ -102,6 +103,7 @@ export function InterviewRoom({
   const shouldScrollTeamOnNextRenderRef = useRef(false);
   const shouldScrollAiOnNextRenderRef = useRef(false);
   const shouldFollowTeamRef = useRef(true);
+  const shouldFollowAiRef = useRef(true);
   const chatSplitRef = useRef<HTMLDivElement | null>(null);
   const [resizingChatColumns, setResizingChatColumns] = useState(false);
   const [aiPaneWidth, setAiPaneWidth] = useState(50);
@@ -253,7 +255,7 @@ export function InterviewRoom({
   }, [teamMessages]);
 
   useEffect(() => {
-    if (!shouldScrollAiOnNextRenderRef.current) {
+    if (!shouldScrollAiOnNextRenderRef.current && !shouldFollowAiRef.current) {
       return;
     }
 
@@ -261,20 +263,31 @@ export function InterviewRoom({
     shouldScrollAiOnNextRenderRef.current = false;
   }, [aiMessages]);
 
+  useEffect(() => {
+    shouldFollowTeamRef.current = true;
+    shouldFollowAiRef.current = true;
+    const frameId = window.requestAnimationFrame(() => {
+      scrollContainerToBottom(teamScrollRef.current);
+      scrollContainerToBottom(aiScrollRef.current);
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [roomKey]);
+
   const postMessage = async (
     channel: "team" | "ai",
     attachments: InterviewRoomUploadAttachment[] = [],
   ) => {
     const content = channel === "team" ? teamDraft.trim() : aiDraft.trim();
 
-    if (!content && attachments.length === 0) {
+    if (sendingRef.current[channel] || (!content && attachments.length === 0)) {
       return false;
     }
+    sendingRef.current[channel] = true;
 
     const pendingKey = crypto.randomUUID();
 
     const optimisticMessage: RoomUiMessage = {
-      id: `temp-${crypto.randomUUID()}`,
+      id: crypto.randomUUID(),
       roomKey,
       eventType: roomKey.startsWith("imported:") ? "imported" : "local",
       eventId: roomKey.split(":").slice(1).join(":"),
@@ -342,6 +355,7 @@ export function InterviewRoom({
             roomKey,
             channel,
             content,
+            clientMessageId: optimisticMessage.id,
             roomLabel,
             attachments,
           }),
@@ -384,6 +398,7 @@ export function InterviewRoom({
         }
         return false;
       } finally {
+        sendingRef.current[channel] = false;
         if (channel === "team") {
           setTeamSending(false);
         } else {
@@ -522,6 +537,18 @@ export function InterviewRoom({
             </div>
           ))}
         </div>
+        <button
+          type="button"
+          onClick={() => {
+            shouldFollowTeamRef.current = false;
+            shouldFollowAiRef.current = false;
+            if (teamScrollRef.current) teamScrollRef.current.scrollTop = 0;
+            if (aiScrollRef.current) aiScrollRef.current.scrollTop = 0;
+          }}
+          className="shrink-0 rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm font-medium text-[color:var(--foreground)] transition hover:bg-[color:var(--background)]"
+        >
+          Go to top
+        </button>
       </div>
 
       {sidebarToolsTarget
@@ -648,6 +675,12 @@ export function InterviewRoom({
           onSend={() => postMessage("ai")}
           pending={aiSending}
           scrollRef={aiScrollRef}
+          onScroll={() => {
+            shouldFollowAiRef.current = isNearBottom(aiScrollRef.current);
+          }}
+          onContentLoad={() => {
+            if (shouldFollowAiRef.current) scrollContainerToBottom(aiScrollRef.current);
+          }}
           />
         </div>
         <div
@@ -712,6 +745,9 @@ export function InterviewRoom({
           scrollRef={teamScrollRef}
           onScroll={() => {
             shouldFollowTeamRef.current = isNearBottom(teamScrollRef.current);
+          }}
+          onContentLoad={() => {
+            if (shouldFollowTeamRef.current) scrollContainerToBottom(teamScrollRef.current);
           }}
           />
         </div>
@@ -855,6 +891,7 @@ function ChatColumn({
   pending,
   scrollRef,
   onScroll,
+  onContentLoad,
 }: {
   title: string;
   description: string;
@@ -869,6 +906,7 @@ function ChatColumn({
   pending: boolean;
   scrollRef: React.RefObject<HTMLDivElement | null>;
   onScroll?: () => void;
+  onContentLoad?: () => void;
 }) {
   const [attachments, setAttachments] = useState<TeamAttachmentDraft[]>([]);
   const [preparingAttachments, setPreparingAttachments] = useState(false);
@@ -1388,10 +1426,7 @@ function ChatColumn({
                 ...(selectedMicrophoneId ? { deviceId: { exact: selectedMicrophoneId } } : {}),
               },
             })
-          : await navigator.mediaDevices.getDisplayMedia({
-              video: true,
-              audio: true,
-            });
+          : await getDisplayMediaKeepingFocus();
       if (stream.getAudioTracks().length === 0) {
         stream.getTracks().forEach((track) => track.stop());
         throw new Error(
@@ -1622,6 +1657,7 @@ function ChatColumn({
       <div
         ref={scrollRef}
         onScroll={onScroll}
+        onLoadCapture={onContentLoad}
         className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-5"
         style={
           discussionStyle
@@ -2186,6 +2222,28 @@ function getSupportedAudioMimeType() {
   ) ?? "";
 }
 
+function getDisplayMediaKeepingFocus() {
+  const options: DisplayMediaStreamOptions & { controller?: object } = {
+    video: true,
+    audio: true,
+  };
+  const CaptureControllerConstructor = (
+    window as Window & {
+      CaptureController?: new () => { setFocusBehavior: (behavior: "no-focus-change") => void };
+    }
+  ).CaptureController;
+  if (CaptureControllerConstructor) {
+    try {
+      const controller = new CaptureControllerConstructor();
+      controller.setFocusBehavior("no-focus-change");
+      options.controller = controller;
+    } catch {
+      // Older browsers use the normal display picker behavior.
+    }
+  }
+  return navigator.mediaDevices.getDisplayMedia(options);
+}
+
 function SettingsIcon() {
   return (
     <svg
@@ -2315,6 +2373,11 @@ function isMatchingPendingPrompt(
   serverMessage: InterviewRoomMessage,
   pendingMessage: RoomUiMessage,
 ) {
+  if (
+    serverMessage.id === pendingMessage.id
+  ) {
+    return true;
+  }
   if (
     serverMessage.role !== "user" ||
     serverMessage.channel !== pendingMessage.channel ||
