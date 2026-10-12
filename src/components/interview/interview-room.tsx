@@ -54,6 +54,7 @@ type ActiveAudioCapture = {
   realtimeReady: boolean;
   realtimeText: string;
   realtimeDraftLine: string;
+  realtimeDraftPosition: number | null;
   realtimeCleared: boolean;
   running: boolean;
 };
@@ -1010,13 +1011,12 @@ function ChatColumn({
     };
   }, [enableTranscription]);
 
-  const appendTranscript = (source: AudioCaptureSource, text: string) => {
+  const appendTranscript = (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || !transcriptionMountedRef.current) {
       return;
     }
-    const label = source === "microphone" ? "Mic" : "Speaker";
-    const nextDraft = [draftRef.current.trimEnd(), `${label}: ${trimmed}`]
+    const nextDraft = [draftRef.current.trimEnd(), trimmed]
       .filter(Boolean)
       .join("\n");
     updateCaptionInput(nextDraft);
@@ -1033,24 +1033,37 @@ function ChatColumn({
 
   const updateRealtimeDraft = (capture: ActiveAudioCapture, text: string, final = false) => {
     if (!transcriptionMountedRef.current) return;
-    const label = capture.source === "microphone" ? "Mic" : "Speaker";
-    const line = text.trim() ? `${label}: ${text.trim()}` : "";
+    const line = text.trim();
     const previous = capture.realtimeDraftLine;
     let nextDraft = draftRef.current;
-    const position = previous ? nextDraft.lastIndexOf(previous) : -1;
+    const savedPosition = capture.realtimeDraftPosition;
+    const position = previous
+      ? savedPosition !== null && nextDraft.slice(savedPosition, savedPosition + previous.length) === previous
+        ? savedPosition
+        : nextDraft.lastIndexOf(previous)
+      : -1;
     if (
       position >= 0 &&
       (position === 0 || nextDraft[position - 1] === "\n") &&
       (position + previous.length === nextDraft.length || nextDraft[position + previous.length] === "\n")
     ) {
-      const before = nextDraft.slice(0, position);
-      const after = nextDraft.slice(position + previous.length);
-      nextDraft = before.endsWith("\n")
-        ? before.slice(0, -1) + after
-        : before + (after.startsWith("\n") ? after.slice(1) : after);
+      const removeStart = position > 0 ? position - 1 : position;
+      const removeEnd = position === 0 && nextDraft[position + previous.length] === "\n"
+        ? position + previous.length + 1
+        : position + previous.length;
+      nextDraft = nextDraft.slice(0, removeStart) + nextDraft.slice(removeEnd);
+      for (const other of audioCapturesRef.current.values()) {
+        if (other !== capture && other.realtimeDraftPosition !== null && other.realtimeDraftPosition >= removeEnd) {
+          other.realtimeDraftPosition -= removeEnd - removeStart;
+        }
+      }
     }
     if (line) {
-      nextDraft = [nextDraft.trimEnd(), line].filter(Boolean).join("\n");
+      const prefix = nextDraft.trimEnd();
+      capture.realtimeDraftPosition = final ? null : prefix ? prefix.length + 1 : 0;
+      nextDraft = [prefix, line].filter(Boolean).join("\n");
+    } else {
+      capture.realtimeDraftPosition = null;
     }
     capture.realtimeDraftLine = final ? "" : line;
     updateCaptionInput(nextDraft);
@@ -1068,7 +1081,7 @@ function ChatColumn({
         const next = nextTranscriptRef.current[source]++;
         const caption = completed.get(next) || "";
         completed.delete(next);
-        if (caption) appendTranscript(source, caption);
+        if (caption) appendTranscript(caption);
       }
     };
     if (blob.size < 800 || !transcriptionMountedRef.current) {
@@ -1402,6 +1415,7 @@ function ChatColumn({
         realtimeReady: false,
         realtimeText: "",
         realtimeDraftLine: "",
+        realtimeDraftPosition: null,
         realtimeCleared: false,
         running: true,
       };
@@ -1955,8 +1969,8 @@ function ChatColumn({
                 ) : null}
                 {(livePreview.microphone || livePreview.speaker) ? (
                   <div className="mt-1 text-sm text-[color:var(--foreground)]" aria-live="polite">
-                    {livePreview.microphone ? <div>Mic: {livePreview.microphone}</div> : null}
-                    {livePreview.speaker ? <div>Speaker: {livePreview.speaker}</div> : null}
+                    {livePreview.microphone ? <div>{livePreview.microphone}</div> : null}
+                    {livePreview.speaker ? <div>{livePreview.speaker}</div> : null}
                   </div>
                 ) : null}
                 {transcriptionSupported !== false ? (
@@ -2021,6 +2035,7 @@ function ChatColumn({
                 for (const capture of audioCapturesRef.current.values()) {
                   capture.realtimeText = "";
                   capture.realtimeDraftLine = "";
+                  capture.realtimeDraftPosition = null;
                   capture.realtimeCleared = true;
                 }
                 setLivePreview({ microphone: "", speaker: "" });
