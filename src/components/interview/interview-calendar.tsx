@@ -130,6 +130,7 @@ const statusDefaultColors: Record<InterviewStatus, string> = {
 const emptyDraft = (
   date: string,
   time = "09:00",
+  timeZone = "Europe/Paris",
 ): Omit<InterviewEvent, "id"> => ({
   ownerUserId: "",
   title: "",
@@ -143,6 +144,7 @@ const emptyDraft = (
   step: 1,
   scheduledDate: date,
   scheduledTime: time,
+  timeZone,
   durationMinutes: 60,
   status: "Scheduled",
   notes: "",
@@ -722,13 +724,13 @@ export function InterviewCalendar({
             start: dateTimeInTimeZone(
               event.scheduledDate,
               event.scheduledTime,
-              calendarTimeZone,
+              event.timeZone,
             ),
             end: addMinutesToDateTime(
               event.scheduledDate,
               event.scheduledTime,
               event.durationMinutes,
-              calendarTimeZone,
+              event.timeZone,
             ),
             classNames: [
               displayColor
@@ -811,7 +813,7 @@ export function InterviewCalendar({
   })();
 
   const openCreateModal = (date: string, time = "09:00") => {
-    setDraft(emptyDraft(date, time));
+    setDraft(emptyDraft(date, time, resolvedCalendarTimeZone(calendarTimeZone)));
     setEditingId("");
     setIsLocalModalReadOnly(false);
     setModalOpen(true);
@@ -820,7 +822,17 @@ export function InterviewCalendar({
   const openEditModal = (event: InterviewEvent, options?: { readOnly?: boolean }) => {
     const { id: _, ...nextDraft } = event;
     void _;
-    setDraft(nextDraft);
+    const start = dateTimeInTimeZone(
+      event.scheduledDate,
+      event.scheduledTime,
+      event.timeZone,
+    );
+    setDraft({
+      ...nextDraft,
+      scheduledDate: toDateKey(start, calendarTimeZone),
+      scheduledTime: formatTimeInputValue(start, calendarTimeZone),
+      timeZone: resolvedCalendarTimeZone(calendarTimeZone),
+    });
     setEditingId(event.id);
     setIsLocalModalReadOnly(Boolean(options?.readOnly));
     setModalOpen(true);
@@ -871,7 +883,16 @@ const openImportedEditModal = (
               .sort(compareEvents)
           : [...current, payload.event!].sort(compareEvents),
       );
-      setSelectedDate(payload.event.scheduledDate);
+      setSelectedDate(
+        toDateKey(
+          dateTimeInTimeZone(
+            payload.event.scheduledDate,
+            payload.event.scheduledTime,
+            payload.event.timeZone,
+          ),
+          calendarTimeZone,
+        ),
+      );
       setModalOpen(false);
       setEditingId("");
     } finally {
@@ -1123,7 +1144,7 @@ const openImportedEditModal = (
       return;
     }
 
-    setSelectedDate(rawEvent.scheduledDate);
+    setSelectedDate(toDateKey(arg.event.start ?? new Date(), calendarTimeZone));
     openEditModal(rawEvent, {
       readOnly: !canEditLocalEvent,
     });
@@ -1246,6 +1267,7 @@ const openImportedEditModal = (
       ...rawEvent,
       scheduledDate: toDateKey(nextStart, calendarTimeZone),
       scheduledTime: formatTimeInputValue(nextStart, calendarTimeZone),
+      timeZone: resolvedCalendarTimeZone(calendarTimeZone),
       durationMinutes: Math.max(
         15,
         Math.round((nextEnd.getTime() - nextStart.getTime()) / 60000),
@@ -1272,7 +1294,7 @@ const openImportedEditModal = (
           .map((event) => (event.id === payload.event!.id ? payload.event! : event))
           .sort(compareEvents),
       );
-      setSelectedDate(payload.event.scheduledDate);
+      setSelectedDate(toDateKey(nextStart, calendarTimeZone));
     } catch {
       arg.revert();
     }
@@ -2111,7 +2133,7 @@ const openImportedEditModal = (
                   }
                 />
               </Field>
-              <Field label="Time">
+              <Field label={`Time (${calendarTimezoneLabel})`}>
                 <PickerInput
                   type="time"
                   value={draft.scheduledTime}
@@ -2437,7 +2459,7 @@ const openImportedEditModal = (
                   }
                 />
               </Field>
-              <Field label="Time">
+              <Field label={`Time (${calendarTimezoneLabel})`}>
                 <PickerInput
                   type="time"
                   value={formatTimeInputValue(
@@ -3401,10 +3423,16 @@ function combineDateTime(date: string, time: string) {
 
 function dateTimeInTimeZone(date: string, time: string, timeZone: string) {
   const parsed = DateTime.fromISO(combineDateTime(date, time), {
-    zone: timeZone === "local" ? undefined : timeZone,
+    zone: timeZone === "local" ? undefined : timeZone || "Europe/Paris",
   });
 
   return parsed.isValid ? parsed.toJSDate() : new Date(combineDateTime(date, time));
+}
+
+function resolvedCalendarTimeZone(timeZone: string) {
+  return timeZone === "local"
+    ? Intl.DateTimeFormat().resolvedOptions().timeZone || "Etc/UTC"
+    : timeZone;
 }
 
 function addMinutesToDateTime(
@@ -3490,9 +3518,8 @@ function dateTimeInDisplayZone(date: Date, timeZone: string) {
 }
 
 function compareEvents(a: InterviewEvent, b: InterviewEvent) {
-  return `${a.scheduledDate}T${a.scheduledTime}`.localeCompare(
-    `${b.scheduledDate}T${b.scheduledTime}`,
-  );
+  return dateTimeInTimeZone(a.scheduledDate, a.scheduledTime, a.timeZone).getTime() -
+    dateTimeInTimeZone(b.scheduledDate, b.scheduledTime, b.timeZone).getTime();
 }
 
 function getUserName(users: Array<{ id: string; name: string }>, userId: string) {

@@ -179,6 +179,7 @@ model Interview {
   step            Int             @default(1)
   scheduledDate   String
   scheduledTime   String
+  timeZone        String          @default("Europe/Paris")
   durationMinutes Int             @default(60)
   status          InterviewStatus @default(Scheduled)
   notes           String          @default("")

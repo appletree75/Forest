@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { DateTime } from "luxon";
 
 import {
   deleteGoogleCalendarConnection,
@@ -287,9 +288,11 @@ async function ensureFreshGoogleAccessToken(connection: GoogleCalendarConnection
 }
 
 function buildGoogleCalendarEventPayload(event: InterviewEvent) {
-  const start = new Date(`${event.scheduledDate}T${event.scheduledTime}:00`);
-  const end = new Date(start);
-  end.setMinutes(end.getMinutes() + event.durationMinutes);
+  const start = DateTime.fromISO(
+    `${event.scheduledDate}T${event.scheduledTime}:00`,
+    { zone: event.timeZone || "Europe/Paris" },
+  );
+  const end = start.plus({ minutes: event.durationMinutes });
   const description = [
     Number.isFinite(event.step) && event.step > 0 ? `Step: ${event.step}` : "",
     event.notes.trim(),
@@ -305,10 +308,10 @@ function buildGoogleCalendarEventPayload(event: InterviewEvent) {
     summary: event.title,
     description: description || undefined,
     start: {
-      dateTime: start.toISOString(),
+      dateTime: start.toUTC().toISO(),
     },
     end: {
-      dateTime: end.toISOString(),
+      dateTime: end.toUTC().toISO(),
     },
   };
 }

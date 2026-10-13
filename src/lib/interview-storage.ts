@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { InterviewStatus as PrismaInterviewStatus } from "@prisma/client";
+import { DateTime } from "luxon";
 
 import {
   ensureDatabaseConnected,
@@ -30,6 +31,7 @@ function mapInterview(event: {
   step: number;
   scheduledDate: string;
   scheduledTime: string;
+  timeZone: string;
   durationMinutes: number;
   status: PrismaInterviewStatus;
   notes: string;
@@ -48,6 +50,7 @@ function mapInterview(event: {
     step: event.step,
     scheduledDate: event.scheduledDate,
     scheduledTime: event.scheduledTime,
+    timeZone: event.timeZone,
     durationMinutes: event.durationMinutes,
     status: event.status,
     notes: event.notes,
@@ -69,6 +72,7 @@ function toStoredInterview(input: InterviewEvent) {
     step: sanitizeStep(input.step),
     scheduledDate: String(input.scheduledDate ?? "").trim(),
     scheduledTime: String(input.scheduledTime ?? "").trim(),
+    timeZone: sanitizeTimeZone(input.timeZone),
     durationMinutes: sanitizeDuration(input.durationMinutes),
     status: sanitizeStatus(input.status) as PrismaInterviewStatus,
     notes: String(input.notes ?? "").trim(),
@@ -184,4 +188,11 @@ function sanitizeColor(value: unknown, status: unknown) {
 function sanitizeOptionalString(value: unknown) {
   const normalized = String(value ?? "").trim();
   return normalized || null;
+}
+
+function sanitizeTimeZone(value: unknown) {
+  const timeZone = String(value ?? "").trim();
+  return timeZone && DateTime.local().setZone(timeZone).isValid
+    ? timeZone
+    : "Europe/Paris";
 }

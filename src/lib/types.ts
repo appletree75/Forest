@@ -86,6 +86,7 @@ export type InterviewEvent = {
   step: number;
   scheduledDate: string;
   scheduledTime: string;
+  timeZone: string;
   durationMinutes: number;
   status: InterviewStatus;
   notes: string;
