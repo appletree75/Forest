@@ -2015,9 +2015,9 @@ function ChatColumn({
                   </div>
                 ) : null}
                 {(livePreview.microphone || livePreview.speaker) ? (
-                  <div className="mt-1 text-sm text-[color:var(--foreground)]" aria-live="polite">
-                    {livePreview.microphone ? <div>{livePreview.microphone}</div> : null}
-                    {livePreview.speaker ? <div>{livePreview.speaker}</div> : null}
+                  <div className="mt-1 overflow-x-auto text-sm text-[color:var(--foreground)]" aria-live="polite">
+                    {livePreview.microphone ? <div className="whitespace-nowrap">{livePreview.microphone}</div> : null}
+                    {livePreview.speaker ? <div className="whitespace-nowrap">{livePreview.speaker}</div> : null}
                   </div>
                 ) : null}
                 {transcriptionSupported !== false ? (
@@ -2058,10 +2058,15 @@ function ChatColumn({
               onPaste={handlePaste}
               onKeyDown={handleMessageKeyDown}
               rows={discussionStyle ? 1 : 3}
+              wrap={activeCaptureSources.length > 0 ? "off" : "soft"}
               className={
                 discussionStyle
-                  ? "max-h-40 min-h-[22px] flex-1 resize-none overflow-y-auto bg-transparent px-1 py-[3px] text-sm leading-5 outline-none placeholder:text-[#9aa89b]"
-                  : "min-h-[92px] w-full resize-y rounded-2xl border border-[var(--border)] bg-[color:var(--background)] px-3 py-3 text-sm outline-none"
+                  ? `max-h-40 min-h-[22px] flex-1 resize-none overflow-y-auto bg-transparent px-1 py-[3px] text-sm leading-5 outline-none placeholder:text-[#9aa89b]${
+                      activeCaptureSources.length > 0 ? " overflow-x-auto whitespace-nowrap" : ""
+                    }`
+                  : `min-h-[92px] w-full resize-y rounded-2xl border border-[var(--border)] bg-[color:var(--background)] px-3 py-3 text-sm outline-none${
+                      activeCaptureSources.length > 0 ? " overflow-x-auto whitespace-nowrap" : ""
+                    }`
               }
               placeholder={
                 activeCaptureSources.length > 0
