@@ -39,6 +39,11 @@ type TeamAttachmentDraft = {
 
 type AudioCaptureSource = "microphone" | "speaker";
 
+/** Clip fallback: shorter segments = captions appear sooner after speech. */
+const CLIP_CAPTION_SEGMENT_MS = 1_000;
+/** Realtime path: commits are required before deltas arrive; keep this low. */
+const REALTIME_CAPTION_COMMIT_MS = 750;
+
 type ActiveAudioCapture = {
   source: AudioCaptureSource;
   stream: MediaStream;
@@ -1365,7 +1370,7 @@ function ChatColumn({
       if (recorder.state === "recording") {
         recorder.stop();
       }
-    }, 2_000);
+    }, CLIP_CAPTION_SEGMENT_MS);
   };
 
   const stopAudioCapture = (source: AudioCaptureSource) => {
@@ -1513,7 +1518,7 @@ function ChatColumn({
         if (channel.readyState === "open" && capture.running) {
           channel.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
         }
-      }, 3_000);
+      }, REALTIME_CAPTION_COMMIT_MS);
       return true;
     } catch {
       connection.close();
