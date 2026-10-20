@@ -188,7 +188,7 @@ export async function getInterviewRoomState(roomKey: string) {
     }),
     prisma.interviewRoomMessage.findMany({
       where: { roomKey },
-      orderBy: { createdAt: "asc" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: 400,
     }),
     prisma.$queryRaw<InterviewRoomContextRow[]>(Prisma.sql`
@@ -222,7 +222,7 @@ export async function getInterviewRoomState(roomKey: string) {
 
   return {
     presence: presenceRows.map(mapPresence),
-    messages: messageRows.map((message) =>
+    messages: messageRows.reverse().map((message) =>
       mapMessage(message, attachmentsByMessage.get(message.id)),
     ),
     context: contextRows[0]

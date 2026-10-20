@@ -13,6 +13,7 @@ import {
   upsertInterviewRoomContext,
 } from "@/lib/interview-room";
 import { createAiChatCompletion } from "@/lib/ai-chat";
+import { createAiImageGeneration } from "@/lib/ai-image";
 
 async function sendAiMessage(input: {
   prompt: string;
@@ -253,6 +254,7 @@ export async function POST(request: Request) {
       content?: string;
       clientMessageId?: string;
       roomLabel?: string;
+      generateImage?: boolean;
       attachments?: Array<{
         name?: string;
         mimeType?: string;
@@ -263,6 +265,7 @@ export async function POST(request: Request) {
     const roomKey = body.roomKey?.trim() || "";
     const channel = body.channel === "ai" ? "ai" : "team";
     const content = body.content?.trim() || "";
+    const generateImage = channel === "ai" && body.generateImage === true;
     const clientMessageId = typeof body.clientMessageId === "string" &&
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.clientMessageId)
       ? body.clientMessageId
@@ -287,6 +290,13 @@ export async function POST(request: Request) {
     if (channel === "ai" && attachments.length > 0) {
       return NextResponse.json(
         { message: "Attachments are available in Team Chat only." },
+        { status: 400 },
+      );
+    }
+
+    if (generateImage && !content) {
+      return NextResponse.json(
+        { message: "Describe the image you want to generate." },
         { status: 400 },
       );
     }
@@ -316,23 +326,46 @@ export async function POST(request: Request) {
     let assistantMessage = null;
 
     if (channel === "ai") {
-      const currentState = await getInterviewRoomState(roomKey);
-      const aiResponse = await sendAiMessage({
-        prompt: content,
-        roomLabel,
-        userName: user.name,
-        context: currentState.context,
-      });
+      if (generateImage) {
+        const image = await createAiImageGeneration({ prompt: content });
+        assistantMessage = await createInterviewRoomMessage({
+          roomKey,
+          eventType: parsedRoom.eventType,
+          eventId: parsedRoom.eventId,
+          channel: "ai",
+          role: "assistant",
+          userName: "Nex AI",
+          content: image.revisedPrompt
+            ? `Generated image.\n\nRevised prompt: ${image.revisedPrompt}`
+            : "Generated image.",
+          attachments: [
+            {
+              name: image.name,
+              mimeType: image.mimeType,
+              sizeBytes: image.sizeBytes,
+              dataUrl: image.dataUrl,
+            },
+          ],
+        });
+      } else {
+        const currentState = await getInterviewRoomState(roomKey);
+        const aiResponse = await sendAiMessage({
+          prompt: content,
+          roomLabel,
+          userName: user.name,
+          context: currentState.context,
+        });
 
-      assistantMessage = await createInterviewRoomMessage({
-        roomKey,
-        eventType: parsedRoom.eventType,
-        eventId: parsedRoom.eventId,
-        channel: "ai",
-        role: "assistant",
-        userName: "Nex AI",
-        content: aiResponse,
-      });
+        assistantMessage = await createInterviewRoomMessage({
+          roomKey,
+          eventType: parsedRoom.eventType,
+          eventId: parsedRoom.eventId,
+          channel: "ai",
+          role: "assistant",
+          userName: "Nex AI",
+          content: aiResponse,
+        });
+      }
     }
 
     return NextResponse.json({
