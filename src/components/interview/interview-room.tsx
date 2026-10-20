@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import type {
   ChangeEvent,
@@ -23,6 +23,7 @@ import type {
 type RoomUiMessage = InterviewRoomMessage & {
   pendingKey?: string;
   isLoading?: boolean;
+  loadingLabel?: string;
 };
 
 type InterviewRoomUploadAttachment = Omit<
@@ -87,10 +88,25 @@ export function InterviewRoom({
   const [pendingMessages, setPendingMessages] = useState<RoomUiMessage[]>([]);
   const [teamDraft, setTeamDraft] = useState("");
   const [aiDraft, setAiDraft] = useState("");
+  const [aiDrawMode, setAiDrawMode] = useState(false);
   const [teamSending, setTeamSending] = useState(false);
   const [aiSending, setAiSending] = useState(false);
   const sendingRef = useRef({ team: false, ai: false });
   const [messageError, setMessageError] = useState("");
+  const [teamToast, setTeamToast] = useState<{
+    id: string;
+    sender: string;
+    preview: string;
+    count: number;
+  } | null>(null);
+  const teamNotificationRef = useRef({
+    roomKey,
+    seenIds: new Set(
+      initialMessages
+        .filter((message) => message.channel === "team")
+        .map((message) => message.id),
+    ),
+  });
   const [roomDegraded, setRoomDegraded] = useState(false);
   const [sharedNoteDraft, setSharedNoteDraft] = useState(initialContext.sharedNote);
   const [sharedNoteSaving, setSharedNoteSaving] = useState(false);
@@ -192,6 +208,19 @@ export function InterviewRoom({
   }, [roomKey]);
 
   useEffect(() => {
+    if (teamNotificationRef.current.roomKey !== roomKey) {
+      teamNotificationRef.current = {
+        roomKey,
+        seenIds: new Set(
+          initialMessages
+            .filter((message) => message.channel === "team")
+            .map((message) => message.id),
+        ),
+      };
+      setTeamToast(null);
+    }
+
+    let active = true;
     const syncRoom = async () => {
       if (document.visibilityState === "hidden") {
         return;
@@ -215,12 +244,34 @@ export function InterviewRoom({
         context: InterviewRoomContext;
       };
 
+      if (!active) return;
+
       if (payload.degraded) {
         setRoomDegraded(true);
         return;
       }
 
       setRoomDegraded(false);
+      const seenIds = teamNotificationRef.current.seenIds;
+      const newTeamMessages = payload.messages.filter(
+        (message) =>
+          message.channel === "team" &&
+          message.userId !== user.id &&
+          !seenIds.has(message.id),
+      );
+      for (const message of payload.messages) {
+        if (message.channel === "team") seenIds.add(message.id);
+      }
+      if (newTeamMessages.length > 0) {
+        const latest = newTeamMessages.at(-1)!;
+        setTeamToast({
+          id: latest.id,
+          sender: latest.userName,
+          preview: latest.content.trim() ||
+            (latest.attachments.length === 1 ? "Sent an attachment" : "Sent attachments"),
+          count: newTeamMessages.length,
+        });
+      }
       setPresence(payload.presence);
       setServerMessages((current) => mergeServerRoomMessages(current, payload.messages));
       setRoomContext(payload.context);
@@ -233,17 +284,26 @@ export function InterviewRoom({
     };
 
     void syncRoom().catch(() => {
-      setRoomDegraded(true);
+      if (active) setRoomDegraded(true);
     });
 
     const intervalId = window.setInterval(() => {
       void syncRoom().catch(() => {
-        setRoomDegraded(true);
+        if (active) setRoomDegraded(true);
       });
     }, 2000);
 
-    return () => window.clearInterval(intervalId);
-  }, [contextModalOpen, roomKey]);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [contextModalOpen, initialMessages, roomKey, user.id]);
+
+  useEffect(() => {
+    if (!teamToast) return;
+    const timeoutId = window.setTimeout(() => setTeamToast(null), 5000);
+    return () => window.clearTimeout(timeoutId);
+  }, [teamToast]);
 
   useEffect(() => {
     if (!shouldScrollTeamOnNextRenderRef.current && !shouldFollowTeamRef.current) {
@@ -277,8 +337,10 @@ export function InterviewRoom({
     channel: "team" | "ai",
     attachments: InterviewRoomUploadAttachment[] = [],
     contentOverride?: string,
+    options?: { generateImage?: boolean },
   ) => {
     const content = (contentOverride ?? (channel === "team" ? teamDraft : aiDraft)).trim();
+    const generateImage = channel === "ai" && options?.generateImage === true;
 
     if (sendingRef.current[channel] || (!content && attachments.length === 0)) {
       return false;
@@ -322,6 +384,7 @@ export function InterviewRoom({
             attachments: [],
             pendingKey,
             isLoading: true,
+            loadingLabel: generateImage ? "Drawing..." : "Thinking...",
           }
         : null;
 
@@ -358,6 +421,7 @@ export function InterviewRoom({
             content,
             clientMessageId: optimisticMessage.id,
             roomLabel,
+            generateImage,
             attachments,
           }),
         });
@@ -538,18 +602,6 @@ export function InterviewRoom({
             </div>
           ))}
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            shouldFollowTeamRef.current = false;
-            shouldFollowAiRef.current = false;
-            if (teamScrollRef.current) teamScrollRef.current.scrollTop = 0;
-            if (aiScrollRef.current) aiScrollRef.current.scrollTop = 0;
-          }}
-          className="shrink-0 rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm font-medium text-[color:var(--foreground)] transition hover:bg-[color:var(--background)]"
-        >
-          Go to top
-        </button>
       </div>
 
       {sidebarToolsTarget
@@ -622,6 +674,39 @@ export function InterviewRoom({
           )
         : null}
 
+      {teamToast ? (
+        <div
+          key={teamToast.id}
+          role="status"
+          aria-live="polite"
+          className="fixed right-4 top-4 z-[60] w-[min(22rem,calc(100vw-2rem))] rounded-2xl border border-[var(--border)] bg-white p-4 shadow-[0_16px_48px_rgba(24,34,24,0.18)]"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-[color:var(--foreground)]">
+                {teamToast.count > 1
+                  ? `${teamToast.count} new Team chat messages`
+                  : "New Team chat message"}
+              </p>
+              <p className="mt-1 line-clamp-2 break-words text-sm text-[color:var(--muted)]">
+                <span className="font-medium text-[color:var(--foreground)]">
+                  {teamToast.sender}: {" "}
+                </span>
+                {teamToast.preview}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setTeamToast(null)}
+              aria-label="Dismiss Team chat notification"
+              className="shrink-0 rounded-md px-1 text-lg leading-none text-[color:var(--muted)] hover:text-[color:var(--foreground)]"
+            >
+              &times;
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {roomDegraded ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           Live sync is temporarily degraded. Existing room messages stay visible and sync
@@ -655,6 +740,30 @@ export function InterviewRoom({
               >
                 AI context
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!aiScrollRef.current || aiScrollRef.current.scrollTop === 0) return;
+                  shouldFollowAiRef.current = false;
+                  aiScrollRef.current.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+                aria-label="Go to top of AI room"
+                title="Go to top of AI room"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[var(--border)] bg-[color:var(--accent-soft)] text-[color:var(--accent)] transition-colors hover:border-[color:var(--accent)] hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--accent)]"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  className="h-5 w-5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M5 4h14M12 20V8m-5 5 5-5 5 5" />
+                </svg>
+              </button>
               {user.role === "admin" ? (
                 <button
                   type="button"
@@ -673,7 +782,12 @@ export function InterviewRoom({
           enableTranscription
           draft={aiDraft}
           onDraftChange={setAiDraft}
-          onSend={(_attachments, content) => postMessage("ai", [], content)}
+          enableImageGeneration
+          imageGenerationActive={aiDrawMode}
+          onImageGenerationActiveChange={setAiDrawMode}
+          onSend={(_attachments, content) =>
+            postMessage("ai", [], content, { generateImage: aiDrawMode })
+          }
           pending={aiSending}
           scrollRef={aiScrollRef}
           onScroll={() => {
@@ -886,6 +1000,9 @@ function ChatColumn({
   currentUserId,
   discussionStyle = false,
   enableTranscription = false,
+  enableImageGeneration = false,
+  imageGenerationActive = false,
+  onImageGenerationActiveChange,
   draft,
   onDraftChange,
   onSend,
@@ -901,6 +1018,9 @@ function ChatColumn({
   currentUserId: string;
   discussionStyle?: boolean;
   enableTranscription?: boolean;
+  enableImageGeneration?: boolean;
+  imageGenerationActive?: boolean;
+  onImageGenerationActiveChange?: (active: boolean) => void;
   draft: string;
   onDraftChange: (value: string) => void;
   onSend: (attachments?: InterviewRoomUploadAttachment[], content?: string) => Promise<boolean>;
@@ -1827,6 +1947,11 @@ function ChatColumn({
             );
           }
 
+          const messageAttachments = message.attachments ?? [];
+          const imageAttachments = messageAttachments.filter((attachment) =>
+            attachment.mimeType.startsWith("image/"),
+          );
+
           return (
             <div
               key={message.id}
@@ -1851,12 +1976,43 @@ function ChatColumn({
                       <span className="h-2 w-2 animate-bounce rounded-full bg-current [animation-delay:-0.1s]" />
                       <span className="h-2 w-2 animate-bounce rounded-full bg-current" />
                     </span>
-                    Thinking...
+                    {message.loadingLabel || "Thinking..."}
                   </div>
                 ) : (
-                  <div className="mt-2 whitespace-pre-wrap text-sm leading-6">
-                    {message.content}
-                  </div>
+                  <>
+                    {imageAttachments.length > 0 ? (
+                      <div
+                        className={`mt-3 grid max-w-lg gap-2 ${
+                          imageAttachments.length === 1 ? "grid-cols-1" : "grid-cols-2"
+                        }`}
+                      >
+                        {imageAttachments.map((attachment) => (
+                          <button
+                            key={attachment.id}
+                            type="button"
+                            onClick={() =>
+                              setImagePreview({
+                                src: attachment.dataUrl,
+                                name: attachment.name,
+                              })
+                            }
+                            className="overflow-hidden rounded-xl border border-sky-100 bg-white"
+                          >
+                            <img
+                              src={attachment.dataUrl}
+                              alt={attachment.name}
+                              className="max-h-80 w-full object-contain transition-opacity hover:opacity-90"
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                    {message.content ? (
+                      <div className="mt-2 whitespace-pre-wrap text-sm leading-6">
+                        {message.content}
+                      </div>
+                    ) : null}
+                  </>
                 )}
               </div>
             </div>
@@ -2015,9 +2171,9 @@ function ChatColumn({
                   </div>
                 ) : null}
                 {(livePreview.microphone || livePreview.speaker) ? (
-                  <div className="mt-1 text-sm text-[color:var(--foreground)]" aria-live="polite">
-                    {livePreview.microphone ? <div>{livePreview.microphone}</div> : null}
-                    {livePreview.speaker ? <div>{livePreview.speaker}</div> : null}
+                  <div className="mt-1 overflow-x-auto text-sm text-[color:var(--foreground)]" aria-live="polite">
+                    {livePreview.microphone ? <div className="whitespace-nowrap">{livePreview.microphone}</div> : null}
+                    {livePreview.speaker ? <div className="whitespace-nowrap">{livePreview.speaker}</div> : null}
                   </div>
                 ) : null}
                 {transcriptionSupported !== false ? (
@@ -2058,20 +2214,47 @@ function ChatColumn({
               onPaste={handlePaste}
               onKeyDown={handleMessageKeyDown}
               rows={discussionStyle ? 1 : 3}
+              wrap={activeCaptureSources.length > 0 ? "off" : "soft"}
               className={
                 discussionStyle
-                  ? "max-h-40 min-h-[22px] flex-1 resize-none overflow-y-auto bg-transparent px-1 py-[3px] text-sm leading-5 outline-none placeholder:text-[#9aa89b]"
-                  : "min-h-[92px] w-full resize-y rounded-2xl border border-[var(--border)] bg-[color:var(--background)] px-3 py-3 text-sm outline-none"
+                  ? `max-h-40 min-h-[22px] flex-1 resize-none overflow-y-auto bg-transparent px-1 py-[3px] text-sm leading-5 outline-none placeholder:text-[#9aa89b]${
+                      activeCaptureSources.length > 0 ? " overflow-x-auto whitespace-nowrap" : ""
+                    }`
+                  : `min-h-[92px] w-full resize-y rounded-2xl border border-[var(--border)] bg-[color:var(--background)] px-3 py-3 text-sm outline-none${
+                      activeCaptureSources.length > 0 ? " overflow-x-auto whitespace-nowrap" : ""
+                    }`
               }
               placeholder={
                 activeCaptureSources.length > 0
                   ? "Live captions will appear here..."
                   : discussionStyle
                     ? "Write a message..."
-                    : "Type a message..."
+                    : imageGenerationActive
+                      ? "Describe the image to draw..."
+                      : "Type a message..."
               }
             />
           </div>
+          {enableImageGeneration ? (
+            <button
+              type="button"
+              onClick={() => onImageGenerationActiveChange?.(!imageGenerationActive)}
+              disabled={pending}
+              aria-pressed={imageGenerationActive}
+              title={
+                imageGenerationActive
+                  ? "Draw mode on â€” uses OpenAI Images with the selected Settings key"
+                  : "Turn on Draw mode to generate an image"
+              }
+              className={`h-8 shrink-0 rounded-lg border px-3 text-xs font-semibold transition disabled:opacity-60 ${
+                imageGenerationActive
+                  ? "border-sky-300 bg-sky-50 text-sky-800"
+                  : "border-[var(--border)] bg-white text-[color:var(--foreground)] hover:bg-[color:var(--background)]"
+              }`}
+            >
+              Draw
+            </button>
+          ) : null}
           {enableTranscription ? (
             <button
               type="button"
@@ -2167,7 +2350,7 @@ function ChatColumn({
                 className="flex h-10 w-10 items-center justify-center rounded-full border border-[#d8e4d8] bg-[#f7fbf5] text-xl"
                 aria-label="Close settings"
               >
-                ×
+                Ã—
               </button>
             </div>
             <div className="mt-5 grid grid-cols-3 gap-2">

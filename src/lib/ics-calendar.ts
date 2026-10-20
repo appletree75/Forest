@@ -1,3 +1,5 @@
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { DateTime } from "luxon";
 
 import { extractMeetingLinkFromText } from "@/lib/meeting-link";
@@ -7,9 +9,10 @@ import type {
   ImportedCalendarEventOverride,
 } from "@/lib/types";
 
-const ICS_FETCH_TIMEOUT_MS = 10000;
-const ICS_FETCH_ATTEMPTS = 3;
+const ICS_FETCH_TIMEOUT_MS = 8000;
+const ICS_FETCH_ATTEMPTS = 2;
 const ICS_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const ICS_MAX_REDIRECTS = 5;
 
 type CachedIcsFeed = {
   text: string;
@@ -60,7 +63,8 @@ async function getIcsFeed(url: string) {
 }
 
 async function fetchIcsFeedWithFallback(url: string) {
-  const cached = getUsableCachedFeed(url);
+  const freshCache = getCachedFeed(url, { allowStale: false });
+  const staleCache = getCachedFeed(url, { allowStale: true });
   let lastError: unknown;
 
   for (let attempt = 0; attempt < ICS_FETCH_ATTEMPTS; attempt += 1) {
@@ -71,56 +75,133 @@ async function fetchIcsFeedWithFallback(url: string) {
     } catch (error) {
       lastError = error;
 
-      if (cached) {
-        return cached.text;
+      // Prefer any in-memory copy over blocking the interview page on dead feeds.
+      if (freshCache) {
+        return freshCache.text;
+      }
+      if (staleCache) {
+        return staleCache.text;
       }
 
-      if (attempt < ICS_FETCH_ATTEMPTS - 1) {
-        await waitForRetry(200 * (attempt + 1));
+      // Timeouts rarely recover on immediate retry; fail fast.
+      if (isTimeoutError(error) || attempt >= ICS_FETCH_ATTEMPTS - 1) {
+        break;
       }
+
+      await waitForRetry(250 * (attempt + 1));
     }
   }
 
   throw lastError instanceof Error ? lastError : new Error("Unable to load ICS feed.");
 }
 
-async function fetchIcsFeed(url: string) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), ICS_FETCH_TIMEOUT_MS);
-
+async function fetchIcsFeed(url: string, redirectCount = 0): Promise<string> {
+  let parsed: URL;
   try {
-    const response = await fetch(url, {
-      cache: "no-store",
-      signal: controller.signal,
-      headers: {
-        Accept: "text/calendar,text/plain;q=0.9,*/*;q=0.8",
-      },
+    parsed = new URL(url);
+  } catch {
+    throw new Error("ICS URL is invalid.");
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("ICS URL must use http or https.");
+  }
+
+  const text = await requestIcsText(parsed);
+
+  if (!text.includes("BEGIN:VCALENDAR")) {
+    // Some providers briefly return HTML login/error pages; treat as invalid feed.
+    throw new Error("ICS provider returned an invalid calendar document.");
+  }
+
+  return text;
+
+  async function requestIcsText(target: URL): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+      const transport = target.protocol === "http:" ? httpRequest : httpsRequest;
+      const req = transport(
+        target,
+        {
+          method: "GET",
+          headers: {
+            Accept: "text/calendar,text/plain;q=0.9,*/*;q=0.8",
+            "User-Agent": "NexCalendar/1.0",
+          },
+          timeout: ICS_FETCH_TIMEOUT_MS,
+        },
+        (response) => {
+          const status = response.statusCode ?? 0;
+          const location = response.headers.location;
+
+          if (
+            status >= 300 &&
+            status < 400 &&
+            typeof location === "string" &&
+            location.trim()
+          ) {
+            response.resume();
+
+            if (redirectCount >= ICS_MAX_REDIRECTS) {
+              reject(new Error("ICS provider redirected too many times."));
+              return;
+            }
+
+            try {
+              const nextUrl = new URL(location, target).toString();
+              resolve(fetchIcsFeed(nextUrl, redirectCount + 1));
+            } catch {
+              reject(new Error("ICS provider returned an invalid redirect."));
+            }
+            return;
+          }
+
+          if (status < 200 || status >= 300) {
+            response.resume();
+            reject(new Error(`ICS provider returned ${status}.`));
+            return;
+          }
+
+          const chunks: Buffer[] = [];
+          response.on("data", (chunk: Buffer | string) => {
+            chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+          });
+          response.on("end", () => {
+            resolve(Buffer.concat(chunks).toString("utf8"));
+          });
+          response.on("error", (error) => {
+            reject(error);
+          });
+        },
+      );
+
+      req.on("timeout", () => {
+        req.destroy();
+        reject(new Error(`ICS feed timed out after ${ICS_FETCH_TIMEOUT_MS}ms.`));
+      });
+      req.on("error", (error) => {
+        reject(error);
+      });
+      req.end();
     });
-
-    if (!response.ok) {
-      throw new Error(`ICS provider returned ${response.status}.`);
-    }
-
-    const text = await response.text();
-
-    if (!text.includes("BEGIN:VCALENDAR")) {
-      throw new Error("ICS provider returned an invalid calendar document.");
-    }
-
-    return text;
-  } finally {
-    clearTimeout(timeoutId);
   }
 }
 
-function getUsableCachedFeed(url: string) {
+function getCachedFeed(url: string, options: { allowStale: boolean }) {
   const cached = icsFeedCache.get(url);
 
-  if (!cached || Date.now() - cached.updatedAt > ICS_CACHE_MAX_AGE_MS) {
+  if (!cached) {
+    return null;
+  }
+
+  if (!options.allowStale && Date.now() - cached.updatedAt > ICS_CACHE_MAX_AGE_MS) {
     return null;
   }
 
   return cached;
+}
+
+function isTimeoutError(error: unknown) {
+  return error instanceof Error && /timed out/i.test(error.message);
 }
 
 function waitForRetry(delayMs: number) {
