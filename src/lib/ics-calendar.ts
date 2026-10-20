@@ -399,12 +399,19 @@ function parseIcsDateValue(
   const tzid = extractTzid(key);
   const normalizedZone = tzid ? normalizeIcsTimezone(tzid) : null;
   const compact = normalized.replace("Z", "");
-  const parsedDateTime =
-    parseDateTimeWithZone(
-      compact,
-      isUtc ? "UTC" : normalizedZone ?? calendarTimeZone,
-    ) ??
-    parseDateTimeWithZone(compact, "local");
+  // Prefer the event TZID, then the calendar's zone, then local. Never keep an
+  // unrecognized TZID string — that skips the calendar fallback and shifts events.
+  const zoneCandidates = isUtc
+    ? ["UTC"]
+    : [normalizedZone, calendarTimeZone, "local"];
+  let parsedDateTime = null;
+
+  for (const zone of zoneCandidates) {
+    parsedDateTime = parseDateTimeWithZone(compact, zone);
+    if (parsedDateTime) {
+      break;
+    }
+  }
 
   return {
     date: parsedDateTime?.toJSDate() ?? new Date(compact),
@@ -473,7 +480,7 @@ function normalizeIcsTimezone(tzid: string) {
     return WINDOWS_TZ_TO_IANA[embeddedWindowsZone];
   }
 
-  return DISPLAY_TZ_TO_IANA.find(({ pattern }) => pattern.test(trimmed))?.zone ?? trimmed;
+  return DISPLAY_TZ_TO_IANA.find(({ pattern }) => pattern.test(trimmed))?.zone ?? null;
 }
 
 function findCalendarTimeZone(lines: string[]) {
@@ -491,7 +498,7 @@ function findCalendarTimeZone(lines: string[]) {
 
     const zone = normalizeIcsTimezone(line.slice(separatorIndex + 1));
 
-    if (DateTime.local().setZone(zone).isValid) {
+    if (zone && DateTime.local().setZone(zone).isValid) {
       return zone;
     }
   }

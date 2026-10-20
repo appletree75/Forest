@@ -15,6 +15,9 @@ import {
 import { createAiChatCompletion } from "@/lib/ai-chat";
 import { createAiImageGeneration } from "@/lib/ai-image";
 
+const AI_HISTORY_MAX_MESSAGES = 40;
+const AI_HISTORY_MAX_CHARS = 24_000;
+
 async function sendAiMessage(input: {
   prompt: string;
   roomLabel: string;
@@ -26,24 +29,14 @@ async function sendAiMessage(input: {
     reference: string;
     aiPrompt: string;
   };
+  history: Array<{ role: "user" | "assistant"; content: string }>;
 }) {
-  return createAiChatCompletion({
-    maxTokens: 800,
-    messages: [
-      {
-        role: "system",
-        content: input.context.aiPrompt,
-      },
-      {
-        role: "user",
-        content: `Now perform the task as instructed above.
+  const systemContent = `${input.context.aiPrompt}
 
-Here is the content you need to work with:
-
-<<<BEGIN CONTENT>>>
+You are chatting in an interview room. Use prior messages in this conversation as context, just like a normal chat assistant.
 
 Room: ${input.roomLabel}
-Asked by: ${input.userName}
+Current user: ${input.userName}
 
 [RESUME]
 ${input.context.resume || "(empty)"}
@@ -55,15 +48,59 @@ ${input.context.jd || "(empty)"}
 ${input.context.details || "(empty)"}
 
 [REFERENCE]
-${input.context.reference || "(empty)"}
+${input.context.reference || "(empty)"}`;
 
-[QUESTION CONTENT]
-${input.prompt}
-
-<<<END CONTENT>>>`,
+  return createAiChatCompletion({
+    maxTokens: 800,
+    messages: [
+      {
+        role: "system",
+        content: systemContent,
+      },
+      ...input.history,
+      {
+        role: "user",
+        content: input.prompt,
       },
     ],
   });
+}
+
+function buildAiChatHistory(
+  messages: Array<{ id: string; channel: string; role: string; content: string }>,
+  excludeMessageId?: string,
+) {
+  const aiMessages = messages.filter(
+    (message) =>
+      message.channel === "ai" &&
+      (message.role === "user" || message.role === "assistant") &&
+      message.id !== excludeMessageId &&
+      message.content.trim(),
+  );
+
+  const selected: Array<{ role: "user" | "assistant"; content: string }> = [];
+  let totalChars = 0;
+
+  for (let index = aiMessages.length - 1; index >= 0; index -= 1) {
+    const message = aiMessages[index];
+    const content = message.content.trim();
+    if (!content) {
+      continue;
+    }
+    if (
+      selected.length >= AI_HISTORY_MAX_MESSAGES ||
+      totalChars + content.length > AI_HISTORY_MAX_CHARS
+    ) {
+      break;
+    }
+    selected.push({
+      role: message.role === "assistant" ? "assistant" : "user",
+      content,
+    });
+    totalChars += content.length;
+  }
+
+  return selected.reverse();
 }
 
 export async function GET(request: Request) {
@@ -354,6 +391,7 @@ export async function POST(request: Request) {
           roomLabel,
           userName: user.name,
           context: currentState.context,
+          history: buildAiChatHistory(currentState.messages, postedMessage.id),
         });
 
         assistantMessage = await createInterviewRoomMessage({

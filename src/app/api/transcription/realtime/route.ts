@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { getSessionUser } from "@/lib/auth";
+import { normalizeCaptionLanguage } from "@/lib/caption-languages";
 import { getSelectedTranscriptionProvider } from "@/lib/transcription-settings";
 
-export async function POST() {
+export async function POST(request: Request) {
   if (!(await getSessionUser())) {
     return NextResponse.json({ message: "Unauthorized." }, { status: 401 });
   }
@@ -12,6 +13,14 @@ export async function POST() {
     const provider = await getSelectedTranscriptionProvider();
     if (!provider || provider.provider !== "openai") {
       return NextResponse.json({ enabled: false });
+    }
+
+    let language = normalizeCaptionLanguage(undefined);
+    try {
+      const body = (await request.json()) as { language?: string };
+      language = normalizeCaptionLanguage(body.language);
+    } catch {
+      // Body is optional; fall back to the default caption language.
     }
 
     const response = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
@@ -25,7 +34,12 @@ export async function POST() {
           type: "transcription",
           audio: {
             input: {
-              transcription: { model: "gpt-live-transcribe", delay: "low" },
+              transcription: {
+                model: "gpt-live-transcribe",
+                delay: "low",
+                // Lock to a single language so captions don't mix languages.
+                languages: [language],
+              },
               turn_detection: null,
             },
           },
@@ -43,7 +57,7 @@ export async function POST() {
         { status: 502 },
       );
     }
-    return NextResponse.json({ enabled: true, token: payload.value });
+    return NextResponse.json({ enabled: true, token: payload.value, language });
   } catch {
     return NextResponse.json({ message: "Live transcription is unavailable." }, { status: 503 });
   }

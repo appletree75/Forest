@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getSessionUser } from "@/lib/auth";
+import { normalizeCaptionLanguage } from "@/lib/caption-languages";
 import { isDatabaseUnavailable } from "@/lib/database";
 import { getSelectedTranscriptionProvider } from "@/lib/transcription-settings";
 
@@ -15,7 +16,7 @@ export async function POST(request: Request) {
   try {
     const formData = await request.formData();
     const audio = formData.get("audio");
-    const language = String(formData.get("language") ?? "en-US").trim();
+    const language = normalizeCaptionLanguage(formData.get("language"));
     if (!(audio instanceof File) || audio.size === 0) {
       return NextResponse.json({ message: "Audio is required." }, { status: 400 });
     }
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
         ? await transcribeWithOpenAi(audio, language, provider.apiKey, provider.model)
         : await transcribeWithDeepgram(audio, language, provider.apiKey, provider.model);
 
-    return NextResponse.json({ ok: true, text, provider: provider.name });
+    return NextResponse.json({ ok: true, text, provider: provider.name, language });
   } catch (error) {
     if (isDatabaseUnavailable(error)) {
       return NextResponse.json(
@@ -66,7 +67,7 @@ async function transcribeWithOpenAi(
   const body = new FormData();
   body.append("file", audio, audio.name || "audio.webm");
   body.append("model", model || "gpt-4o-mini-transcribe");
-  body.append("language", language.split("-")[0] || "en");
+  body.append("language", language);
 
   const response = await fetchWithTimeout(
     "https://api.openai.com/v1/audio/transcriptions",
@@ -92,7 +93,7 @@ async function transcribeWithDeepgram(
   const query = new URLSearchParams({
     model: model || "nova-3",
     smart_format: "true",
-    language: language || "en-US",
+    language,
   });
   const response = await fetchWithTimeout(
     `https://api.deepgram.com/v1/listen?${query.toString()}`,

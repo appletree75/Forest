@@ -12,6 +12,13 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 
 import { TranscriptionProviderModal } from "@/components/interview/transcription-provider-modal";
+import {
+  CAPTION_LANGUAGE_STORAGE_KEY,
+  CAPTION_LANGUAGES,
+  DEFAULT_CAPTION_LANGUAGE,
+  detectDefaultCaptionLanguage,
+  normalizeCaptionLanguage,
+} from "@/lib/caption-languages";
 import type {
   InterviewRoomContext,
   InterviewRoomAttachment,
@@ -1081,6 +1088,11 @@ function ChatColumn({
   const [selectedMicrophoneId, setSelectedMicrophoneId] = useState("");
   const [microphoneLevel, setMicrophoneLevel] = useState(0);
   const microphonePeakRef = useRef(0);
+  /** Keep tab/screen share alive after Stop speaker so the speaking tab stays connected. */
+  const heldSpeakerStreamRef = useRef<MediaStream | null>(null);
+  const [captionLanguage, setCaptionLanguage] = useState(DEFAULT_CAPTION_LANGUAGE);
+  const captionLanguageRef = useRef(captionLanguage);
+  const captionLanguageReadyRef = useRef(false);
 
   useEffect(() => {
     attachmentsRef.current = attachments;
@@ -1089,6 +1101,25 @@ function ChatColumn({
   useEffect(() => {
     draftRef.current = draft;
   }, [draft]);
+
+  useEffect(() => {
+    const frameId = window.requestAnimationFrame(() => {
+      const saved = window.localStorage.getItem(CAPTION_LANGUAGE_STORAGE_KEY);
+      setCaptionLanguage(
+        saved ? normalizeCaptionLanguage(saved) : detectDefaultCaptionLanguage(),
+      );
+      captionLanguageReadyRef.current = true;
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, []);
+
+  useEffect(() => {
+    captionLanguageRef.current = captionLanguage;
+    if (!captionLanguageReadyRef.current) {
+      return;
+    }
+    window.localStorage.setItem(CAPTION_LANGUAGE_STORAGE_KEY, captionLanguage);
+  }, [captionLanguage]);
 
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
@@ -1150,6 +1181,9 @@ function ChatColumn({
         capture.stream.getTracks().forEach((track) => track.stop());
       }
       audioCaptures.clear();
+      const heldSpeakerStream = heldSpeakerStreamRef.current;
+      heldSpeakerStreamRef.current = null;
+      heldSpeakerStream?.getTracks().forEach((track) => track.stop());
       for (const controller of transcriptionRequests) {
         controller.abort();
       }
@@ -1180,10 +1214,7 @@ function ChatColumn({
     if (!trimmed || !transcriptionMountedRef.current) {
       return;
     }
-    const nextDraft = [draftRef.current.trimEnd(), trimmed]
-      .filter(Boolean)
-      .join("\n");
-    updateCaptionInput(nextDraft);
+    updateCaptionInput(joinCaptionText(draftRef.current, trimmed));
   };
 
   const updateCaptionInput = (value: string) => {
@@ -1206,26 +1237,31 @@ function ChatColumn({
         ? savedPosition
         : nextDraft.lastIndexOf(previous)
       : -1;
-    if (
-      position >= 0 &&
-      (position === 0 || nextDraft[position - 1] === "\n") &&
-      (position + previous.length === nextDraft.length || nextDraft[position + previous.length] === "\n")
-    ) {
-      const removeStart = position > 0 ? position - 1 : position;
-      const removeEnd = position === 0 && nextDraft[position + previous.length] === "\n"
-        ? position + previous.length + 1
-        : position + previous.length;
-      nextDraft = nextDraft.slice(0, removeStart) + nextDraft.slice(removeEnd);
-      for (const other of audioCapturesRef.current.values()) {
-        if (other !== capture && other.realtimeDraftPosition !== null && other.realtimeDraftPosition >= removeEnd) {
-          other.realtimeDraftPosition -= removeEnd - removeStart;
+    if (position >= 0) {
+      const beforeOk = position === 0 || /\s/.test(nextDraft[position - 1] ?? "");
+      const afterOk =
+        position + previous.length === nextDraft.length ||
+        /\s/.test(nextDraft[position + previous.length] ?? "");
+      if (beforeOk && afterOk) {
+        const removeStart =
+          position > 0 && /\s/.test(nextDraft[position - 1] ?? "") ? position - 1 : position;
+        const removeEnd = position + previous.length;
+        nextDraft = nextDraft.slice(0, removeStart) + nextDraft.slice(removeEnd);
+        for (const other of audioCapturesRef.current.values()) {
+          if (
+            other !== capture &&
+            other.realtimeDraftPosition !== null &&
+            other.realtimeDraftPosition >= removeEnd
+          ) {
+            other.realtimeDraftPosition -= removeEnd - removeStart;
+          }
         }
       }
     }
     if (line) {
       const prefix = nextDraft.trimEnd();
       capture.realtimeDraftPosition = final ? null : prefix ? prefix.length + 1 : 0;
-      nextDraft = [prefix, line].filter(Boolean).join("\n");
+      nextDraft = joinCaptionText(prefix, line);
     } else {
       capture.realtimeDraftPosition = null;
     }
@@ -1261,7 +1297,7 @@ function ChatColumn({
       const formData = new FormData();
       formData.append("audio", blob, `${source}.${extension}`);
       formData.append("source", source);
-      formData.append("language", navigator.language || "en-US");
+      formData.append("language", captionLanguageRef.current);
       const response = await fetch("/api/transcription", {
         method: "POST",
         body: formData,
@@ -1295,6 +1331,34 @@ function ChatColumn({
         setTranscriptionRequestCount((current) => Math.max(0, current - 1));
       }
     }
+  };
+
+  const holdSpeakerShare = (stream: MediaStream) => {
+    heldSpeakerStreamRef.current = stream;
+  };
+
+  const releaseSpeakerShare = (stream?: MediaStream | null) => {
+    const held = heldSpeakerStreamRef.current;
+    if (!held || (stream && held !== stream)) {
+      stream?.getTracks().forEach((track) => track.stop());
+      return;
+    }
+    heldSpeakerStreamRef.current = null;
+    held.getTracks().forEach((track) => track.stop());
+  };
+
+  const releaseCaptureMedia = (
+    capture: ActiveAudioCapture,
+    options?: { keepSpeakerShare?: boolean },
+  ) => {
+    if (capture.source === "speaker" && options?.keepSpeakerShare) {
+      holdSpeakerShare(capture.stream);
+      return;
+    }
+    if (heldSpeakerStreamRef.current === capture.stream) {
+      heldSpeakerStreamRef.current = null;
+    }
+    capture.stream.getTracks().forEach((track) => track.stop());
   };
 
   const clearAudioCaptureState = (source: AudioCaptureSource) => {
@@ -1333,7 +1397,8 @@ function ChatColumn({
     };
     recorder.onerror = () => {
       capture.running = false;
-      capture.stream.getTracks().forEach((track) => track.stop());
+      releaseCaptureMedia(capture);
+      clearAudioCaptureState(capture.source);
       if (transcriptionMountedRef.current) {
         setTranscriptionError(`Unable to record ${capture.source} audio.`);
       }
@@ -1348,19 +1413,20 @@ function ChatColumn({
       if (capture.running && !capture.realtimeReady) {
         if (capture.recordingStream.getAudioTracks().some((track) => track.readyState !== "live")) {
           setTranscriptionError(`${capture.source === "microphone" ? "Microphone" : "Speaker audio"} stopped unexpectedly. Start it again.`);
-          capture.stream.getTracks().forEach((track) => track.stop());
+          releaseCaptureMedia(capture);
           clearAudioCaptureState(capture.source);
         } else {
           try {
             startRecorderSegment(capture);
           } catch {
             setTranscriptionError(`Unable to restart ${capture.source} recording.`);
-            capture.stream.getTracks().forEach((track) => track.stop());
+            releaseCaptureMedia(capture);
             clearAudioCaptureState(capture.source);
           }
         }
       } else if (!capture.running) {
-        capture.stream.getTracks().forEach((track) => track.stop());
+        // Keep speaker tab/screen share connected; only release mic tracks.
+        releaseCaptureMedia(capture, { keepSpeakerShare: capture.source === "speaker" });
         clearAudioCaptureState(capture.source);
       }
       void transcribeAudioSegment(capture.source, blob);
@@ -1392,7 +1458,8 @@ function ChatColumn({
       window.setTimeout(() => {
         if (audioCapturesRef.current.get(source) !== capture) return;
         if (capture.realtimeText.trim()) updateRealtimeDraft(capture, capture.realtimeText, true);
-        capture.stream.getTracks().forEach((track) => track.stop());
+        // Do not end the display-media share on Stop speaker.
+        releaseCaptureMedia(capture, { keepSpeakerShare: source === "speaker" });
         clearAudioCaptureState(source);
       }, 1_000);
       return;
@@ -1403,7 +1470,7 @@ function ChatColumn({
     if (capture.recorder?.state === "recording") {
       capture.recorder.stop();
     } else {
-      capture.stream.getTracks().forEach((track) => track.stop());
+      releaseCaptureMedia(capture, { keepSpeakerShare: source === "speaker" });
       clearAudioCaptureState(source);
     }
   };
@@ -1540,21 +1607,44 @@ function ChatColumn({
     setTranscriptionStatus(`Waiting for ${source === "microphone" ? "microphone" : "screen audio"} permission...`);
     const tokenRequest: Promise<Response | null> = typeof RTCPeerConnection === "undefined"
       ? Promise.resolve(null)
-      : fetch("/api/transcription/realtime", { method: "POST", cache: "no-store" }).catch(() => null);
+      : fetch("/api/transcription/realtime", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ language: captionLanguageRef.current }),
+          cache: "no-store",
+        }).catch(() => null);
     let stream: MediaStream | null = null;
+    let reusedSpeakerShare = false;
     try {
-      stream =
-        source === "microphone"
-          ? await navigator.mediaDevices.getUserMedia({
-              audio: {
-                echoCancellation: true,
-                noiseSuppression: true,
-                ...(selectedMicrophoneId ? { deviceId: { exact: selectedMicrophoneId } } : {}),
-              },
-            })
-          : await getDisplayMediaKeepingFocus();
+      if (source === "microphone") {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            ...(selectedMicrophoneId ? { deviceId: { exact: selectedMicrophoneId } } : {}),
+          },
+        });
+      } else {
+        const heldSpeakerStream = heldSpeakerStreamRef.current;
+        if (
+          heldSpeakerStream &&
+          heldSpeakerStream.getAudioTracks().some((track) => track.readyState === "live")
+        ) {
+          stream = heldSpeakerStream;
+          reusedSpeakerShare = true;
+        } else {
+          releaseSpeakerShare();
+          stream = await getDisplayMediaKeepingFocus();
+          holdSpeakerShare(stream);
+        }
+      }
       if (stream.getAudioTracks().length === 0) {
-        stream.getTracks().forEach((track) => track.stop());
+        if (!reusedSpeakerShare) {
+          stream.getTracks().forEach((track) => track.stop());
+        }
+        if (source === "speaker") {
+          releaseSpeakerShare(stream);
+        }
         throw new Error(
           "No speaker audio was shared. Select a tab or screen and enable audio sharing.",
         );
@@ -1616,15 +1706,30 @@ function ChatColumn({
       }
       stream.getTracks().forEach((track) => {
         track.addEventListener("ended", () => {
+          const shareStillLive =
+            source === "speaker" &&
+            capture.stream.getTracks().some((item) => item.readyState === "live");
+          if (!shareStillLive && source === "speaker") {
+            if (heldSpeakerStreamRef.current === capture.stream) {
+              heldSpeakerStreamRef.current = null;
+            }
+          }
           if (capture.running) {
             setTranscriptionError(`${source === "microphone" ? "Microphone" : "Speaker audio"} stopped unexpectedly. Start it again.`);
             stopAudioCapture(source);
+            if (source === "speaker" && !shareStillLive) {
+              releaseSpeakerShare(capture.stream);
+            }
           }
-        }, { once: true });
+        });
       });
       startRecorderSegment(capture);
       setActiveCaptureSources((current) => current.includes(source) ? current : [...current, source]);
-      setTranscriptionStatus("Capturing audio. Connecting live transcription...");
+      setTranscriptionStatus(
+        reusedSpeakerShare
+          ? "Resumed speaker tab audio. Connecting live transcription..."
+          : "Capturing audio. Connecting live transcription...",
+      );
       void startRealtimeCapture(capture, tokenRequest)
         .then((realtime) => {
           if (!capture.running || !transcriptionMountedRef.current) return;
@@ -1637,7 +1742,13 @@ function ChatColumn({
         });
     } catch (error) {
       clearAudioCaptureState(source);
-      stream?.getTracks().forEach((track) => track.stop());
+      if (source === "speaker") {
+        if (!reusedSpeakerShare) {
+          releaseSpeakerShare(stream);
+        }
+      } else {
+        stream?.getTracks().forEach((track) => track.stop());
+      }
       setTranscriptionStatus("");
       setTranscriptionError(
         error instanceof DOMException && error.name === "NotAllowedError"
@@ -2184,6 +2295,29 @@ function ChatColumn({
                 {transcriptionSupported !== false ? (
                   <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
                     <label className="flex min-w-0 items-center gap-2 text-xs text-[color:var(--muted)]">
+                      <span>Language</span>
+                      <select
+                        value={captionLanguage}
+                        onChange={(event) =>
+                          setCaptionLanguage(normalizeCaptionLanguage(event.target.value))
+                        }
+                        disabled={activeCaptureSources.length > 0 || startingCaptureSources.length > 0}
+                        className="h-8 min-w-0 max-w-48 rounded-lg border border-[var(--border)] bg-white px-2 text-xs text-[color:var(--foreground)]"
+                        aria-label="Caption language"
+                        title={
+                          activeCaptureSources.length > 0
+                            ? "Stop captions to change language"
+                            : "Lock live captions to one language"
+                        }
+                      >
+                        {CAPTION_LANGUAGES.map((language) => (
+                          <option key={language.code} value={language.code}>
+                            {language.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex min-w-0 items-center gap-2 text-xs text-[color:var(--muted)]">
                       <span>Microphone</span>
                       <select
                         value={selectedMicrophoneId}
@@ -2408,6 +2542,14 @@ function ChatColumn({
       ) : null}
     </section>
   );
+}
+
+function joinCaptionText(prefix: string, text: string) {
+  const base = prefix.trimEnd();
+  const next = text.trim();
+  if (!base) return next;
+  if (!next) return base;
+  return `${base} ${next}`;
 }
 
 function getSupportedAudioMimeType() {

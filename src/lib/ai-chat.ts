@@ -5,7 +5,7 @@ import {
   postOpenAiJson,
 } from "@/lib/openai-endpoint";
 
-type ChatMessage = { role: "system" | "user"; content: string };
+type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
 export async function createAiChatCompletion(input: {
   messages: ChatMessage[];

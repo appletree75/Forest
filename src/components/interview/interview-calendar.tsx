@@ -1616,6 +1616,8 @@ const openImportedEditModal = (
                     slotDuration="00:30:00"
                     snapDuration="00:15:00"
                     slotLabelInterval="01:00"
+                    slotEventOverlap={false}
+                    eventOrderStrict
                     expandRows
                     dayHeaderFormat={{ weekday: "short", day: "numeric" }}
                     eventContent={(arg) =>
@@ -2819,6 +2821,11 @@ const openImportedEditModal = (
         .nex-calendar-shell .fc-timegrid-now-indicator-arrow {
           border-color: #ff4f7a;
           color: #ff4f7a;
+        }
+
+        /* Keep a thin gutter so stacked events don't visually bleed into the next day. */
+        .nex-calendar-shell .fc-timegrid-col-events {
+          margin: 0 2px;
         }
 
         .nex-calendar-shell .fc-event {
