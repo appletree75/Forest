@@ -16,6 +16,7 @@ import {
   CAPTION_LANGUAGE_STORAGE_KEY,
   CAPTION_LANGUAGES,
   DEFAULT_CAPTION_LANGUAGE,
+  captionLanguageToLocale,
   detectDefaultCaptionLanguage,
   normalizeCaptionLanguage,
 } from "@/lib/caption-languages";
@@ -46,10 +47,33 @@ type TeamAttachmentDraft = {
 
 type AudioCaptureSource = "microphone" | "speaker";
 
-/** Clip fallback: shorter segments = captions appear sooner after speech. */
-const CLIP_CAPTION_SEGMENT_MS = 1_000;
-/** Realtime path: commits are required before deltas arrive; keep this low. */
-const REALTIME_CAPTION_COMMIT_MS = 750;
+type BrowserSpeechRecognition = {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  maxAlternatives: number;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+  onresult: ((event: BrowserSpeechRecognitionEvent) => void) | null;
+  onend: (() => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+};
+
+type BrowserSpeechRecognitionEvent = {
+  resultIndex: number;
+  results: ArrayLike<{
+    isFinal: boolean;
+    0: { transcript: string };
+  }>;
+};
+
+/** Last-resort clip path. Longer slices read more accurately than 1s fragments. */
+const CLIP_CAPTION_SEGMENT_MS = 2_000;
+/** Commit after a short pause so phrases stay intact, like Windows live captions. */
+const REALTIME_SILENCE_COMMIT_MS = 320;
+/** If speech never pauses, still flush so captions keep moving. */
+const REALTIME_MAX_UTTERANCE_MS = 1_600;
 
 type ActiveAudioCapture = {
   source: AudioCaptureSource;
@@ -69,6 +93,7 @@ type ActiveAudioCapture = {
   realtimeDraftLine: string;
   realtimeDraftPosition: number | null;
   realtimeCleared: boolean;
+  speechRecognition: BrowserSpeechRecognition | null;
   running: boolean;
 };
 
@@ -1172,6 +1197,7 @@ function ChatColumn({
         capture.realtimeChannel?.close();
         capture.realtimeConnection?.close();
         capture.realtimeTrack?.stop();
+        stopBrowserSpeech(capture);
         void capture.monitorContext?.close();
         const recorder = capture.recorder;
         if (recorder && recorder.state !== "inactive") {
@@ -1373,6 +1399,7 @@ function ChatColumn({
     capture?.realtimeChannel?.close();
     capture?.realtimeConnection?.close();
     capture?.realtimeTrack?.stop();
+    if (capture) stopBrowserSpeech(capture);
     audioCapturesRef.current.delete(source);
     setActiveCaptureSources((current) => current.filter((item) => item !== source));
     setLivePreview((current) => ({ ...current, [source]: "" }));
@@ -1451,6 +1478,13 @@ function ChatColumn({
     if (capture.restartTimer !== null) {
       window.clearTimeout(capture.restartTimer);
     }
+    if (capture.speechRecognition) {
+      stopBrowserSpeech(capture);
+      if (capture.realtimeText.trim()) updateRealtimeDraft(capture, capture.realtimeText, true);
+      releaseCaptureMedia(capture, { keepSpeakerShare: source === "speaker" });
+      clearAudioCaptureState(source);
+      return;
+    }
     if (capture.realtimeReady && capture.realtimeConnection) {
       if (capture.realtimeChannel?.readyState === "open") {
         capture.realtimeChannel.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
@@ -1472,6 +1506,157 @@ function ChatColumn({
     } else {
       releaseCaptureMedia(capture, { keepSpeakerShare: source === "speaker" });
       clearAudioCaptureState(source);
+    }
+  };
+
+  const startRealtimeSilenceCommits = (
+    capture: ActiveAudioCapture,
+    channel: RTCDataChannel,
+  ) => {
+    const commit = () => {
+      if (channel.readyState === "open" && capture.running) {
+        channel.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+      }
+    };
+    let lastCommitAt = Date.now();
+    let silentMs = 0;
+    let voicedMs = 0;
+    let analyser: AnalyserNode | null = null;
+    let samples: Uint8Array | null = null;
+    try {
+      const context = capture.monitorContext ?? new AudioContext();
+      if (!capture.monitorContext) {
+        capture.monitorContext = context;
+        void context.resume().catch(() => undefined);
+      }
+      analyser = context.createAnalyser();
+      analyser.fftSize = 1024;
+      context.createMediaStreamSource(capture.recordingStream).connect(analyser);
+      samples = new Uint8Array(analyser.fftSize);
+    } catch {
+      analyser = null;
+    }
+    if (capture.realtimeTimer !== null) {
+      window.clearInterval(capture.realtimeTimer);
+    }
+    capture.realtimeTimer = window.setInterval(() => {
+      if (!capture.running || channel.readyState !== "open") {
+        return;
+      }
+      const now = Date.now();
+      const level = analyser && samples ? getAudioLevel(analyser, samples) : 0.05;
+      const speaking = level > 0.018;
+      if (speaking) {
+        silentMs = 0;
+        voicedMs += 80;
+      } else {
+        silentMs += 80;
+        if (voicedMs > 120 && silentMs >= REALTIME_SILENCE_COMMIT_MS) {
+          commit();
+          lastCommitAt = now;
+          voicedMs = 0;
+          silentMs = 0;
+        }
+      }
+      if (voicedMs >= REALTIME_MAX_UTTERANCE_MS && now - lastCommitAt >= REALTIME_MAX_UTTERANCE_MS) {
+        commit();
+        lastCommitAt = now;
+        voicedMs = 0;
+        silentMs = 0;
+      }
+    }, 80);
+  };
+
+  const requestRealtimeToken = () =>
+    fetch("/api/transcription/realtime", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ language: captionLanguageRef.current }),
+      cache: "no-store",
+    }).catch(() => null);
+
+  const startBrowserSpeechCapture = (capture: ActiveAudioCapture) => {
+    const Recognition = getSpeechRecognitionConstructor();
+    if (!Recognition || capture.source !== "microphone" || selectedMicrophoneId) {
+      return false;
+    }
+    try {
+      const recognition = new Recognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+      recognition.lang = captionLanguageToLocale(captionLanguageRef.current);
+      capture.speechRecognition = recognition;
+      recognition.onresult = (event) => {
+        if (!transcriptionMountedRef.current || !capture.running) {
+          return;
+        }
+        let finalText = "";
+        let interimText = "";
+        for (let index = event.resultIndex; index < event.results.length; index += 1) {
+          const result = event.results[index];
+          const piece = result[0]?.transcript?.trim() || "";
+          if (!piece) continue;
+          if (result.isFinal) {
+            finalText = joinCaptionText(finalText, piece);
+          } else {
+            interimText = joinCaptionText(interimText, piece);
+          }
+        }
+        if (finalText) {
+          updateRealtimeDraft(capture, finalText, true);
+          capture.realtimeText = "";
+        }
+        if (interimText) {
+          capture.realtimeText = interimText;
+          updateRealtimeDraft(capture, interimText);
+          setLivePreview((current) => ({ ...current, [capture.source]: interimText }));
+        } else if (finalText) {
+          setLivePreview((current) => ({ ...current, [capture.source]: "" }));
+        }
+      };
+      recognition.onerror = (event) => {
+        if (
+          event.error === "no-speech" ||
+          event.error === "aborted" ||
+          !capture.running ||
+          capture.speechRecognition !== recognition
+        ) {
+          return;
+        }
+        stopBrowserSpeech(capture);
+        setTranscriptionStatus("Switching to live transcription...");
+        void startRealtimeCapture(capture, requestRealtimeToken())
+          .then((realtime) => {
+            if (!capture.running || !transcriptionMountedRef.current) return;
+            if (realtime) {
+              setTranscriptionStatus("Live transcription connected.");
+              return;
+            }
+            if (!capture.recorder) startRecorderSegment(capture);
+            setTranscriptionStatus("Using clip transcription.");
+          })
+          .catch(() => {
+            if (capture.running && transcriptionMountedRef.current) {
+              if (!capture.recorder) startRecorderSegment(capture);
+              setTranscriptionStatus("Using clip transcription.");
+            }
+          });
+      };
+      recognition.onend = () => {
+        if (capture.running && capture.speechRecognition === recognition) {
+          try {
+            recognition.start();
+          } catch {
+            // Chrome throws if a restart races an in-flight session.
+          }
+        }
+      };
+      recognition.start();
+      return true;
+    } catch {
+      capture.speechRecognition = null;
+      return false;
     }
   };
 
@@ -1581,11 +1766,7 @@ function ChatColumn({
       capture.realtimeReady = true;
       if (capture.recorder?.state === "recording") capture.recorder.stop();
       realtimeTrack.enabled = true;
-      capture.realtimeTimer = window.setInterval(() => {
-        if (channel.readyState === "open" && capture.running) {
-          channel.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
-        }
-      }, REALTIME_CAPTION_COMMIT_MS);
+      startRealtimeSilenceCommits(capture, channel);
       return true;
     } catch {
       connection.close();
@@ -1605,14 +1786,14 @@ function ChatColumn({
     setStartingCaptureSources((current) => [...current, source]);
     setTranscriptionError("");
     setTranscriptionStatus(`Waiting for ${source === "microphone" ? "microphone" : "screen audio"} permission...`);
-    const tokenRequest: Promise<Response | null> = typeof RTCPeerConnection === "undefined"
-      ? Promise.resolve(null)
-      : fetch("/api/transcription/realtime", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ language: captionLanguageRef.current }),
-          cache: "no-store",
-        }).catch(() => null);
+    const canUseBrowserSpeech =
+      source === "microphone" &&
+      !selectedMicrophoneId &&
+      Boolean(getSpeechRecognitionConstructor());
+    const tokenRequest: Promise<Response | null> =
+      canUseBrowserSpeech || typeof RTCPeerConnection === "undefined"
+        ? Promise.resolve(null)
+        : requestRealtimeToken();
     let stream: MediaStream | null = null;
     let reusedSpeakerShare = false;
     try {
@@ -1668,6 +1849,7 @@ function ChatColumn({
         realtimeDraftLine: "",
         realtimeDraftPosition: null,
         realtimeCleared: false,
+        speechRecognition: null,
         running: true,
       };
       audioCapturesRef.current.set(source, capture);
@@ -1723,8 +1905,11 @@ function ChatColumn({
           }
         });
       });
-      startRecorderSegment(capture);
       setActiveCaptureSources((current) => current.includes(source) ? current : [...current, source]);
+      if (startBrowserSpeechCapture(capture)) {
+        setTranscriptionStatus("Live captions using this computer's speech engine.");
+        return;
+      }
       setTranscriptionStatus(
         reusedSpeakerShare
           ? "Resumed speaker tab audio. Connecting live transcription..."
@@ -1733,10 +1918,16 @@ function ChatColumn({
       void startRealtimeCapture(capture, tokenRequest)
         .then((realtime) => {
           if (!capture.running || !transcriptionMountedRef.current) return;
-          setTranscriptionStatus(realtime ? "Live transcription connected." : "Using clip transcription.");
+          if (realtime) {
+            setTranscriptionStatus("Live transcription connected.");
+            return;
+          }
+          if (!capture.recorder) startRecorderSegment(capture);
+          setTranscriptionStatus("Using clip transcription.");
         })
         .catch(() => {
           if (capture.running && transcriptionMountedRef.current) {
+            if (!capture.recorder) startRecorderSegment(capture);
             setTranscriptionStatus("Using clip transcription.");
           }
         });
@@ -2550,6 +2741,46 @@ function joinCaptionText(prefix: string, text: string) {
   if (!base) return next;
   if (!next) return base;
   return `${base} ${next}`;
+}
+
+function getSpeechRecognitionConstructor() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const speechWindow = window as Window & {
+    SpeechRecognition?: new () => BrowserSpeechRecognition;
+    webkitSpeechRecognition?: new () => BrowserSpeechRecognition;
+  };
+  return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition ?? null;
+}
+
+function stopBrowserSpeech(capture: ActiveAudioCapture) {
+  const recognition = capture.speechRecognition;
+  if (!recognition) {
+    return;
+  }
+  recognition.onresult = null;
+  recognition.onend = null;
+  recognition.onerror = null;
+  capture.speechRecognition = null;
+  try {
+    recognition.abort();
+  } catch {
+    try {
+      recognition.stop();
+    } catch {
+      // Already stopped.
+    }
+  }
+}
+
+function getAudioLevel(analyser: AnalyserNode, samples: Uint8Array) {
+  analyser.getByteTimeDomainData(samples);
+  const sum = samples.reduce((total, value) => {
+    const sample = (value - 128) / 128;
+    return total + sample * sample;
+  }, 0);
+  return Math.sqrt(sum / samples.length);
 }
 
 function getSupportedAudioMimeType() {

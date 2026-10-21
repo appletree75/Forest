@@ -36,8 +36,8 @@ export async function POST(request: Request) {
             input: {
               transcription: {
                 model: "gpt-live-transcribe",
-                delay: "low",
-                // Lock to a single language so captions don't mix languages.
+                delay: "minimal",
+                prompt: "Live captions of an interview. Prefer complete phrases and standard spelling.",
                 languages: [language],
               },
               turn_detection: null,
